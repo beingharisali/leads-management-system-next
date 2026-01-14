@@ -1,24 +1,33 @@
 import http from "./http";
 import { User } from "../types/user";
 
+export interface LoginResponse {
+  user: User;
+  token: string;
+}
+
 export async function login(
   email: string,
-  password: string,
-  role?: string
-): Promise<{ user: User; token: string }> {
-  const res = await http.post("/auth/login", { email, password, role });
+  password: string
+): Promise<LoginResponse> {
+  const res = await http.post("/auth/login", {
+    email,
+    password,
+  });
+
   return res.data;
 }
 
-export async function getProfile(): Promise<{ user: User } | null> {
+export async function getProfile(): Promise<User | null> {
   try {
     const res = await http.get("/auth/profile");
-    return res.data;
+    return res.data.user;
   } catch {
     return null;
   }
 }
 
-export async function logoutApi(): Promise<void> {
+export function logoutApi(): void {
   localStorage.removeItem("token");
+  localStorage.removeItem("user");
 }
