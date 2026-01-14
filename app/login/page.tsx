@@ -20,17 +20,20 @@ export default function LoginPage() {
         try {
             const { user, token } = await login(email, password);
 
-            // save token
+            // save token & user
             localStorage.setItem("token", token);
+            localStorage.setItem("user", JSON.stringify(user));
 
             // redirect by role
             if (user.role === "admin") {
                 router.replace("/admin/dashboard");
-            } else {
+            } else if (user.role === "csr") {
                 router.replace("/csr/dashboard");
+            } else {
+                setError("Unauthorized role");
             }
         } catch (err: any) {
-            setError(err?.response?.data?.message || "Invalid email or password");
+            setError(err?.response?.data?.msg || "Invalid email or password");
         } finally {
             setLoading(false);
         }
@@ -71,7 +74,7 @@ export default function LoginPage() {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-black text-white py-2 rounded hover:bg-gray-800"
+                    className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 disabled:opacity-60"
                 >
                     {loading ? "Logging in..." : "Login"}
                 </button>

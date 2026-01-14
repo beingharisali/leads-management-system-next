@@ -1,4 +1,12 @@
-export type UserRole = "admin" | "instructor" | "staff" | "student" | "teacher";
+// All system roles (global)
+export type UserRole =
+  | "admin"
+  | "csr"
+  | "instructor"
+  | "staff"
+  | "student"
+  | "teacher";
+
 export interface User {
   id: string;
   name: string;
@@ -7,6 +15,7 @@ export interface User {
   createdAt?: string;
   updatedAt?: string;
 }
+
 export interface AuthResponse {
   user: User;
   token: string;
