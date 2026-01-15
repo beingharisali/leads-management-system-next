@@ -5,6 +5,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import http from "@/services/http";
 import LeadList, { Lead } from "@/components/LeadList";
+import FilterButtons from "@/components/buttons/FilterButtons";
 
 type FilterType = "day" | "week" | "month";
 
@@ -20,10 +21,10 @@ export default function LeadsListPage() {
         setError("");
         try {
             const res = await http.get(`/lead/csr-leads?filter=${filter}`);
-            setLeads(res.data || []);
+            setLeads(res.data.data || []); // ✅ ensure .data field exists
         } catch (err: any) {
             console.error(err);
-            setError("Failed to load leads");
+            setError(err.response?.data?.message || "Failed to load leads");
         } finally {
             setLoading(false);
         }
@@ -39,32 +40,31 @@ export default function LeadsListPage() {
                 <div className="min-h-screen p-6 bg-gray-100">
                     <h1 className="text-3xl font-bold mb-6">My Leads</h1>
 
-                    {/* Filter Buttons */}
-                    <div className="mb-6 flex gap-3">
-                        {(["day", "week", "month"] as FilterType[]).map((f) => (
-                            <button
-                                key={f}
-                                onClick={() => setFilter(f)}
-                                className={`px-4 py-2 rounded font-medium transition-colors duration-200 ${filter === f
-                                        ? "bg-black text-white"
-                                        : "bg-white border hover:bg-gray-200"
-                                    }`}
-                            >
-                                {f === "day"
-                                    ? "Today"
-                                    : f === "week"
-                                        ? "This Week"
-                                        : "This Month"}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Filter Buttons (Reusable Component) */}
+                    <FilterButtons
+                        options={["day", "week", "month"]}
+                        selected={filter}
+                        onChange={(f: FilterType) => setFilter(f)}
+                        labels={{ day: "Today", week: "This Week", month: "This Month" }}
+                    />
 
                     {/* Loading / Error */}
-                    {loading && <p className="text-gray-600">Loading leads...</p>}
-                    {error && <p className="text-red-500">{error}</p>}
+                    {loading && <p className="text-gray-600 mt-4">Loading leads...</p>}
+                    {error && <p className="text-red-500 mt-4">{error}</p>}
 
                     {/* Lead List Component */}
-                    {!loading && !error && <LeadList leads={leads} refreshLeads={fetchLeads} />}
+                    {!loading && !error && leads.length > 0 && (
+                        <LeadList
+                            leads={leads}
+                            refreshLeads={fetchLeads}
+                            role="csr" // ✅ Fix for TypeScript redline
+                        />
+                    )}
+
+                    {/* No leads */}
+                    {!loading && !error && leads.length === 0 && (
+                        <p className="text-gray-600 mt-4">No leads found for this filter.</p>
+                    )}
                 </div>
             </RoleGuard>
         </ProtectedRoute>

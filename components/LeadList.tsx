@@ -1,10 +1,12 @@
 "use client";
+
 import { useState } from "react";
 import ConvertLeadModal from "./ConvertLeadModel";
 import axios from "@/services/axios";
 
+// Interface for a lead
 export interface Lead {
-    id: string;
+    _id: string;           // backend se _id aata hai
     name: string;
     phone: string;
     course: string;
@@ -13,17 +15,20 @@ export interface Lead {
     createdAt: string;
 }
 
+// Props for LeadList
 interface LeadListProps {
     leads: Lead[];
     refreshLeads: () => void;
-    role: "csr" | "admin"; // new prop
+    role: "csr" | "admin"; // determines which actions are shown
 }
 
 export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
+    // Delete lead (admin only)
     const handleDelete = async (id: string) => {
         if (!confirm("Are you sure you want to delete this lead?")) return;
+
         try {
             const token = localStorage.getItem("token");
             await axios.delete(`/api/v1/lead/${id}`, {
@@ -57,7 +62,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
 
                 <tbody>
                     {leads.map((lead) => (
-                        <tr key={lead.id} className="hover:bg-gray-50 text-center">
+                        <tr key={lead._id} className="hover:bg-gray-50 text-center">
                             <td className="p-3 border text-left">{lead.name}</td>
                             <td className="p-3 border text-left">{lead.phone}</td>
                             <td className="p-3 border text-left">{lead.course}</td>
@@ -66,8 +71,8 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                             <td className="p-3 border">
                                 <span
                                     className={`px-2 py-1 rounded text-sm font-medium ${lead.status === "converted"
-                                            ? "bg-green-100 text-green-700"
-                                            : "bg-blue-100 text-blue-700"
+                                        ? "bg-green-100 text-green-700"
+                                        : "bg-blue-100 text-blue-700"
                                         }`}
                                 >
                                     {lead.status}
@@ -79,6 +84,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                             </td>
 
                             <td className="p-3 border text-center flex justify-center gap-2">
+                                {/* Admin Actions */}
                                 {role === "admin" && (
                                     <>
                                         <button
@@ -88,7 +94,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                                             Edit
                                         </button>
                                         <button
-                                            onClick={() => handleDelete(lead.id)}
+                                            onClick={() => handleDelete(lead._id)}
                                             className="text-red-600 hover:underline font-medium"
                                         >
                                             Delete
@@ -96,6 +102,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                                     </>
                                 )}
 
+                                {/* Convert to sale button */}
                                 {lead.status !== "converted" && (
                                     <button
                                         onClick={() => setSelectedLead(lead)}
@@ -105,6 +112,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                                     </button>
                                 )}
 
+                                {/* CSR view for converted leads */}
                                 {lead.status === "converted" && role !== "admin" && (
                                     <span className="text-green-600 font-semibold">Converted</span>
                                 )}
@@ -114,9 +122,10 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                 </tbody>
             </table>
 
+            {/* Modal for converting lead */}
             {selectedLead && (
                 <ConvertLeadModal
-                    leadId={selectedLead.id}
+                    leadId={selectedLead._id}
                     onClose={() => setSelectedLead(null)}
                     onSuccess={() => {
                         refreshLeads();
