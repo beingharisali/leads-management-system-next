@@ -5,6 +5,8 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import http from "@/services/http";
 import CSRStatsChart from "@/components/CSRStatsChart";
+import Loading from "@/components/Loading";
+import ErrorMessage from "@/components/ErrorMessage";
 
 type FilterType = "day" | "week" | "month";
 
@@ -53,37 +55,45 @@ export default function CsrDashboard() {
                             <button
                                 key={f}
                                 onClick={() => setFilter(f)}
-                                className={`px-4 py-2 rounded font-medium ${filter === f ? "bg-black text-white" : "bg-white border hover:bg-gray-200"
+                                className={`px-4 py-2 rounded font-medium ${filter === f
+                                    ? "bg-black text-white"
+                                    : "bg-white border hover:bg-gray-200"
                                     }`}
                             >
-                                {f === "day" ? "Today" : f === "week" ? "This Week" : "This Month"}
+                                {f === "day"
+                                    ? "Today"
+                                    : f === "week"
+                                        ? "This Week"
+                                        : "This Month"}
                             </button>
                         ))}
                     </div>
 
-                    {loading && <p className="text-gray-600">Loading stats...</p>}
-                    {error && <p className="text-red-500">{error}</p>}
+                    {/* Loading & Error */}
+                    {loading && <Loading />}
+                    {error && <ErrorMessage message={error} />}
 
-                    {stats && (
+                    {/* Stats */}
+                    {stats && !loading && !error && (
                         <>
                             {/* Stats Cards */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                                <div className="bg-white p-4 rounded shadow text-center">
+                                <div className="bg-white p-6 rounded shadow text-center">
                                     <p className="text-gray-500">Total Leads</p>
                                     <p className="text-2xl font-bold">{stats.totalLeads}</p>
                                 </div>
-                                <div className="bg-white p-4 rounded shadow text-center">
+                                <div className="bg-white p-6 rounded shadow text-center">
                                     <p className="text-gray-500">Total Sales</p>
                                     <p className="text-2xl font-bold">{stats.totalSales}</p>
                                 </div>
-                                <div className="bg-white p-4 rounded shadow text-center">
+                                <div className="bg-white p-6 rounded shadow text-center">
                                     <p className="text-gray-500">Conversion Rate</p>
                                     <p className="text-2xl font-bold">{stats.conversionRate}%</p>
                                 </div>
                             </div>
 
                             {/* CSR Stats Bar Chart */}
-                            <div className="bg-white p-4 rounded shadow">
+                            <div className="bg-white p-6 rounded shadow">
                                 <CSRStatsChart
                                     labels={stats.labels}
                                     leads={stats.leads}
@@ -97,3 +107,4 @@ export default function CsrDashboard() {
         </ProtectedRoute>
     );
 }
+
