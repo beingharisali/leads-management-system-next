@@ -3,30 +3,29 @@
 import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
+import http from "@/services/http";
 import LeadList, { Lead } from "@/components/LeadList";
-import axios from "@/services/axios";
 import FilterButtons from "@/components/buttons/FilterButtons";
 
 type FilterType = "day" | "week" | "month";
 
-export default function AdminLeadsPage() {
+export default function LeadsListPage() {
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<FilterType>("day");
 
+    // Fetch leads based on selected filter
     const fetchLeads = async () => {
         setLoading(true);
         setError("");
         try {
-            const token = localStorage.getItem("token");
-            const res = await axios.get(`/api/v1/admin/all-leads?filter=${filter}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setLeads(res.data.data || []); // ensure .data exists
+            const res = await http.get(`/lead/csr-leads?filter=${filter}`);
+            setLeads(res.data.data || []); // ✅ ensures proper data path
         } catch (err: any) {
-            console.error(err);
-            setError(err.response?.data?.message || "Failed to load leads");
+            console.error("Failed to fetch leads:", err);
+            // Using centralized error from http.ts
+            setError(err.message || "Failed to load leads");
         } finally {
             setLoading(false);
         }
@@ -38,11 +37,11 @@ export default function AdminLeadsPage() {
 
     return (
         <ProtectedRoute>
-            <RoleGuard allowedRole="admin">
+            <RoleGuard allowedRole="csr">
                 <div className="min-h-screen p-6 bg-gray-100">
-                    <h1 className="text-3xl font-bold mb-6">All Leads</h1>
+                    <h1 className="text-3xl font-bold mb-6">My Leads</h1>
 
-                    {/* Filter Buttons */}
+                    {/* Filter Buttons (Reusable Component) */}
                     <FilterButtons
                         options={["day", "week", "month"]}
                         selected={filter}
@@ -56,7 +55,11 @@ export default function AdminLeadsPage() {
 
                     {/* Lead List Component */}
                     {!loading && !error && leads.length > 0 && (
-                        <LeadList leads={leads} refreshLeads={fetchLeads} role="admin" />
+                        <LeadList
+                            leads={leads}
+                            refreshLeads={fetchLeads}
+                            role="csr" // ✅ Fix for TypeScript redline
+                        />
                     )}
 
                     {/* No leads */}

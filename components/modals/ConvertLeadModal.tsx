@@ -20,20 +20,22 @@ export default function ConvertLeadModal({ leadId, onClose, onSuccess }: Convert
             setError("Amount is required");
             return;
         }
+
         setLoading(true);
         setError("");
+
         try {
             const token = localStorage.getItem("token");
             await axios.post(
                 `/api/v1/sales/convert/${leadId}`,
-                { amount: Number(amount) }, // ✅ ensure number type sent to API
+                { amount: Number(amount) }, // ✅ ensure number type sent
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             onSuccess();
-            onClose(); // ✅ close modal after successful conversion
+            onClose(); // ✅ close modal after success
         } catch (err: any) {
-            console.error(err);
-            setError(err.response?.data?.message || "Conversion failed"); // ✅ show API error if any
+            console.error("Conversion error:", err);
+            setError(err.response?.data?.message || "Conversion failed"); // ✅ show API error
         } finally {
             setLoading(false);
         }
@@ -42,6 +44,7 @@ export default function ConvertLeadModal({ leadId, onClose, onSuccess }: Convert
     return (
         <Modal isOpen={true} onClose={onClose} title="Convert Lead to Sale">
             {error && <p className="text-red-500 mb-2">{error}</p>}
+
             <input
                 type="number"
                 value={amount}
@@ -49,6 +52,7 @@ export default function ConvertLeadModal({ leadId, onClose, onSuccess }: Convert
                 placeholder="Enter sale amount"
                 className="border p-2 rounded w-full mb-4"
             />
+
             <button
                 onClick={handleConvert}
                 disabled={loading}

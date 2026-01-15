@@ -36,13 +36,13 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
             });
             refreshLeads();
         } catch (err: any) {
-            console.error(err);
-            alert(err?.response?.data?.msg || "Failed to delete lead");
+            console.error("Delete lead error:", err);
+            alert(err?.response?.data?.message || "Failed to delete lead");
         }
     };
 
     if (!leads || leads.length === 0) {
-        return <p className="text-gray-600">No leads found.</p>;
+        return <p className="text-gray-600 mt-4">No leads found.</p>;
     }
 
     return (

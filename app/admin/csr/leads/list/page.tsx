@@ -21,10 +21,11 @@ export default function LeadsListPage() {
         setError("");
         try {
             const res = await http.get(`/lead/csr-leads?filter=${filter}`);
-            setLeads(res.data.data || []); // ✅ ensure .data field exists
+            setLeads(res.data.data || []); // ✅ ensures proper data path
         } catch (err: any) {
-            console.error(err);
-            setError(err.response?.data?.message || "Failed to load leads");
+            console.error("Failed to fetch leads:", err);
+            // Using centralized error from http.ts
+            setError(err.message || "Failed to load leads");
         } finally {
             setLoading(false);
         }
