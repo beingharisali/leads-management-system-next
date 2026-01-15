@@ -1,13 +1,15 @@
-// components/LeadList.tsx
 "use client";
 import { useState } from "react";
 import ConvertLeadModal from "./ConvertLeadModel";
 
-interface Lead {
-    _id: string;
+export interface Lead {
+    id: string;
     name: string;
-    email: string;
+    phone: string;
+    course: string;
+    source?: string;
     status: string;
+    createdAt: string;
 }
 
 interface LeadListProps {
@@ -18,29 +20,58 @@ interface LeadListProps {
 export default function LeadList({ leads, refreshLeads }: LeadListProps) {
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
+    if (!leads || leads.length === 0) {
+        return <p className="text-gray-600">No leads found.</p>;
+    }
+
     return (
-        <div>
-            <h2>Lead List</h2>
-            <table className="lead-table">
-                <thead>
+        <div className="overflow-x-auto bg-white shadow rounded">
+            <table className="min-w-full">
+                <thead className="bg-gray-100">
                     <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Status</th>
-                        <th>Action</th>
+                        <th className="p-3 border text-left">Name</th>
+                        <th className="p-3 border text-left">Phone</th>
+                        <th className="p-3 border text-left">Course</th>
+                        <th className="p-3 border text-left">Source</th>
+                        <th className="p-3 border text-center">Status</th>
+                        <th className="p-3 border text-center">Created</th>
+                        <th className="p-3 border text-center">Action</th>
                     </tr>
                 </thead>
+
                 <tbody>
                     {leads.map((lead) => (
-                        <tr key={lead._id}>
-                            <td>{lead.name}</td>
-                            <td>{lead.email}</td>
-                            <td>{lead.status}</td>
-                            <td>
+                        <tr key={lead.id} className="hover:bg-gray-50 text-center">
+                            <td className="p-3 border text-left">{lead.name}</td>
+                            <td className="p-3 border text-left">{lead.phone}</td>
+                            <td className="p-3 border text-left">{lead.course}</td>
+                            <td className="p-3 border text-left">{lead.source || "-"}</td>
+
+                            <td className="p-3 border">
+                                <span
+                                    className={`px-2 py-1 rounded text-sm font-medium ${lead.status === "converted"
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-blue-100 text-blue-700"
+                                        }`}
+                                >
+                                    {lead.status}
+                                </span>
+                            </td>
+
+                            <td className="p-3 border">
+                                {new Date(lead.createdAt).toLocaleDateString()}
+                            </td>
+
+                            <td className="p-3 border text-center">
                                 {lead.status !== "converted" ? (
-                                    <button onClick={() => setSelectedLead(lead)} className="convert-btn">Convert to Sale</button>
+                                    <button
+                                        onClick={() => setSelectedLead(lead)}
+                                        className="text-blue-600 hover:underline font-medium"
+                                    >
+                                        Convert to Sale
+                                    </button>
                                 ) : (
-                                    <span>Converted</span>
+                                    <span className="text-green-600 font-semibold">Converted</span>
                                 )}
                             </td>
                         </tr>
@@ -50,7 +81,7 @@ export default function LeadList({ leads, refreshLeads }: LeadListProps) {
 
             {selectedLead && (
                 <ConvertLeadModal
-                    leadId={selectedLead._id}
+                    leadId={selectedLead.id}
                     onClose={() => setSelectedLead(null)}
                     onSuccess={() => {
                         refreshLeads();
