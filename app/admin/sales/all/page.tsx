@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import axios from "@/services/axios";
+import FilterButtons from "@/components/buttons/FilterButtons";
 
 interface Sale {
     id: string;
@@ -32,16 +33,13 @@ export default function AllSalesPage() {
         setError("");
         try {
             const token = localStorage.getItem("token");
-            const res = await axios.get(
-                `/api/v1/admin/all-sales?filter=${filter}`,
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
+            const res = await axios.get(`/api/v1/admin/all-sales?filter=${filter}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
             setSales(res.data.data || []);
         } catch (err: any) {
             console.error(err);
-            setError("Failed to load sales");
+            setError(err.response?.data?.message || "Failed to load sales");
         } finally {
             setLoading(false);
         }
@@ -73,29 +71,15 @@ export default function AllSalesPage() {
                     <h1 className="text-3xl font-bold mb-6">All Sales</h1>
 
                     {/* Filter Buttons */}
-                    <div className="mb-4 flex gap-3 flex-wrap">
-                        {(["all", "day", "week", "month"] as FilterType[]).map((f) => (
-                            <button
-                                key={f}
-                                onClick={() => {
-                                    setFilter(f);
-                                    setCurrentPage(1);
-                                }}
-                                className={`px-4 py-2 rounded font-medium ${filter === f
-                                        ? "bg-black text-white"
-                                        : "bg-white border hover:bg-gray-200"
-                                    }`}
-                            >
-                                {f === "all"
-                                    ? "All"
-                                    : f === "day"
-                                        ? "Today"
-                                        : f === "week"
-                                            ? "This Week"
-                                            : "This Month"}
-                            </button>
-                        ))}
-                    </div>
+                    <FilterButtons
+                        options={["all", "day", "week", "month"]}
+                        selected={filter}
+                        onChange={(f: FilterType) => {
+                            setFilter(f);
+                            setCurrentPage(1);
+                        }}
+                        labels={{ all: "All", day: "Today", week: "This Week", month: "This Month" }}
+                    />
 
                     {/* Search Input */}
                     <input
@@ -109,12 +93,14 @@ export default function AllSalesPage() {
                         className="mb-4 w-full max-w-md border p-2 rounded"
                     />
 
+                    {/* Loading / Error */}
                     {loading && <p className="text-gray-600">Loading sales...</p>}
                     {error && <p className="text-red-500">{error}</p>}
                     {!loading && filteredSales.length === 0 && (
-                        <p>No sales found.</p>
+                        <p className="text-gray-600">No sales found.</p>
                     )}
 
+                    {/* Sales Table */}
                     {paginatedSales.length > 0 && (
                         <div className="overflow-x-auto bg-white shadow rounded">
                             <table className="min-w-full">
@@ -138,8 +124,8 @@ export default function AllSalesPage() {
                                             <td className="p-3 border">
                                                 <span
                                                     className={`px-2 py-1 rounded text-sm font-medium ${sale.status === "converted"
-                                                            ? "bg-green-100 text-green-700"
-                                                            : "bg-blue-100 text-blue-700"
+                                                        ? "bg-green-100 text-green-700"
+                                                        : "bg-blue-100 text-blue-700"
                                                         }`}
                                                 >
                                                     {sale.status}
@@ -170,8 +156,8 @@ export default function AllSalesPage() {
                                     key={i}
                                     onClick={() => setCurrentPage(i + 1)}
                                     className={`px-3 py-1 rounded ${currentPage === i + 1
-                                            ? "bg-black text-white"
-                                            : "bg-gray-200"
+                                        ? "bg-black text-white"
+                                        : "bg-gray-200"
                                         }`}
                                 >
                                     {i + 1}
