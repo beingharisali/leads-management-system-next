@@ -2,9 +2,10 @@
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import CSRStatsChart from "@/components/CSRStatsChart";
-import SummaryCard from "@/components/SummaryCard"; // new component
+import SummaryCard from "@/components/SummaryCard";
 import { useEffect, useState } from "react";
 import axios from "@/services/axios";
+import { useRouter } from "next/navigation";
 
 interface CSRStat {
     csrName: string;
@@ -15,6 +16,7 @@ interface CSRStat {
 export default function AdminDashboard() {
     const [stats, setStats] = useState<CSRStat[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
 
     // Summary state
     const [totalLeads, setTotalLeads] = useState(0);
@@ -22,8 +24,11 @@ export default function AdminDashboard() {
     const [conversionRate, setConversionRate] = useState(0);
     const [totalCSRs, setTotalCSRs] = useState(0);
 
+    const router = useRouter();
+
     const fetchCSRStats = async () => {
         setLoading(true);
+        setError("");
         try {
             const token = localStorage.getItem("token");
             const res = await axios.get("/api/v1/admin/csr-stats", {
@@ -43,9 +48,9 @@ export default function AdminDashboard() {
             setTotalCSRs(csrsCount);
             setConversionRate(conversion);
 
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert("Failed to fetch CSR stats");
+            setError("Failed to fetch CSR stats");
         } finally {
             setLoading(false);
         }
@@ -62,13 +67,25 @@ export default function AdminDashboard() {
     return (
         <ProtectedRoute>
             <RoleGuard allowedRole="admin">
-                <div className="p-6">
-                    <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+                <div className="p-6 min-h-screen bg-gray-100">
+                    <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
 
                     {loading ? (
-                        <p>Loading CSR stats...</p>
+                        <p className="text-gray-600">Loading CSR stats...</p>
+                    ) : error ? (
+                        <p className="text-red-500">{error}</p>
                     ) : (
                         <>
+                            {/* CSR List Button */}
+                            <div className="mb-6">
+                                <button
+                                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                                    onClick={() => router.push("/admin/csrs")}
+                                >
+                                    View All CSRs
+                                </button>
+                            </div>
+
                             {/* Summary Cards */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                                 <SummaryCard title="Total Leads" value={totalLeads} color="bg-teal-500" />
@@ -78,7 +95,9 @@ export default function AdminDashboard() {
                             </div>
 
                             {/* CSR Stats Chart */}
-                            <CSRStatsChart labels={labels} leads={leads} sales={sales} />
+                            <div className="bg-white p-4 rounded shadow">
+                                <CSRStatsChart labels={labels} leads={leads} sales={sales} />
+                            </div>
                         </>
                     )}
                 </div>
