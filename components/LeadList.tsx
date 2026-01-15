@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import ConvertLeadModal from "./ConvertLeadModel";
+import axios from "@/services/axios";
 
 export interface Lead {
     id: string;
@@ -15,10 +16,25 @@ export interface Lead {
 interface LeadListProps {
     leads: Lead[];
     refreshLeads: () => void;
+    role: "csr" | "admin"; // new prop
 }
 
-export default function LeadList({ leads, refreshLeads }: LeadListProps) {
+export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this lead?")) return;
+        try {
+            const token = localStorage.getItem("token");
+            await axios.delete(`/api/v1/lead/${id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            refreshLeads();
+        } catch (err: any) {
+            console.error(err);
+            alert(err?.response?.data?.msg || "Failed to delete lead");
+        }
+    };
 
     if (!leads || leads.length === 0) {
         return <p className="text-gray-600">No leads found.</p>;
@@ -62,15 +78,34 @@ export default function LeadList({ leads, refreshLeads }: LeadListProps) {
                                 {new Date(lead.createdAt).toLocaleDateString()}
                             </td>
 
-                            <td className="p-3 border text-center">
-                                {lead.status !== "converted" ? (
+                            <td className="p-3 border text-center flex justify-center gap-2">
+                                {role === "admin" && (
+                                    <>
+                                        <button
+                                            onClick={() => alert("Edit lead feature")}
+                                            className="text-yellow-600 hover:underline font-medium"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(lead.id)}
+                                            className="text-red-600 hover:underline font-medium"
+                                        >
+                                            Delete
+                                        </button>
+                                    </>
+                                )}
+
+                                {lead.status !== "converted" && (
                                     <button
                                         onClick={() => setSelectedLead(lead)}
                                         className="text-blue-600 hover:underline font-medium"
                                     >
                                         Convert to Sale
                                     </button>
-                                ) : (
+                                )}
+
+                                {lead.status === "converted" && role !== "admin" && (
                                     <span className="text-green-600 font-semibold">Converted</span>
                                 )}
                             </td>
