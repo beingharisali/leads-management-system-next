@@ -11,6 +11,8 @@ const http = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+// Request interceptor to attach token
 http.interceptors.request.use((config) => {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -19,5 +21,19 @@ http.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Response interceptor for centralized error handling
+http.interceptors.response.use(
+  (response) => response, // just return response if successful
+  (error) => {
+    console.error("API Error:", error.response?.data || error.message);
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.msg ||
+      error.message ||
+      "Something went wrong. Please try again.";
+    return Promise.reject(new Error(message));
+  }
+);
 
 export default http;
