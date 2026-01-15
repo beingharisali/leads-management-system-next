@@ -12,6 +12,7 @@ export default function CreateLeadPage() {
     const [source, setSource] = useState("");
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+    const [messageType, setMessageType] = useState<"success" | "error">("success");
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -19,20 +20,22 @@ export default function CreateLeadPage() {
         setMessage("");
 
         try {
-            await http.post("/lead/create-leads", {
-                name,
-                phone,
-                course,
-                source,
-            });
+            await http.post("/lead/create-leads", { name, phone, course, source });
 
-            setMessage("Lead created successfully ✅");
+            setMessage("✅ Lead created successfully");
+            setMessageType("success");
+
             setName("");
             setPhone("");
             setCourse("");
             setSource("");
+
+            // Optional: auto-clear message after 3 sec
+            setTimeout(() => setMessage(""), 3000);
         } catch (err: any) {
-            setMessage(err?.response?.data?.msg || "Failed to create lead");
+            console.error(err);
+            setMessage(err?.response?.data?.msg || "❌ Failed to create lead");
+            setMessageType("error");
         } finally {
             setLoading(false);
         }
@@ -44,7 +47,14 @@ export default function CreateLeadPage() {
                 <div className="max-w-xl mx-auto mt-10 bg-white p-6 shadow rounded">
                     <h1 className="text-2xl font-bold mb-4">Create New Lead</h1>
 
-                    {message && <p className="mb-3 text-sm">{message}</p>}
+                    {message && (
+                        <p
+                            className={`mb-3 text-sm ${messageType === "success" ? "text-green-600" : "text-red-600"
+                                }`}
+                        >
+                            {message}
+                        </p>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-3">
                         <input
@@ -77,7 +87,7 @@ export default function CreateLeadPage() {
 
                         <button
                             disabled={loading}
-                            className="w-full bg-black text-white py-2 rounded"
+                            className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 transition-colors"
                         >
                             {loading ? "Saving..." : "Create Lead"}
                         </button>
