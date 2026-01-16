@@ -30,7 +30,7 @@ export default function CreateLeadPage() {
             setCourse("");
             setSource("");
 
-            // Optional: auto-clear message after 3 sec
+            // Auto-clear message after 3 sec
             setTimeout(() => setMessage(""), 3000);
         } catch (err: any) {
             console.error(err);
@@ -86,6 +86,7 @@ export default function CreateLeadPage() {
                         />
 
                         <button
+                            type="submit"
                             disabled={loading}
                             className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 transition-colors"
                         >

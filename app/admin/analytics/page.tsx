@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import axios from "@/services/axios";
+import axios from "@/services/http";
 
 import {
     BarChart,
@@ -37,13 +37,16 @@ export default function TeamAnalytics() {
         setError("");
         try {
             const token = localStorage.getItem("token");
+            if (!token) throw new Error("Unauthorized: Token not found");
+
             const res = await axios.get("/api/v1/admin/team-analytics", {
                 headers: { Authorization: `Bearer ${token}` },
             });
+
             setStats(res.data.data || []);
         } catch (err: any) {
             console.error(err);
-            setError("Failed to fetch team analytics");
+            setError(err?.response?.data?.message || "Failed to fetch team analytics");
         } finally {
             setLoading(false);
         }
@@ -53,7 +56,7 @@ export default function TeamAnalytics() {
         fetchTeamStats();
     }, []);
 
-    // Prepare data for charts
+    // Prepare data for charts safely
     const barData = stats.map((s) => ({
         name: s.csrName,
         Leads: s.totalLeads,

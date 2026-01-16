@@ -6,7 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
-import axios from "@/services/axios";
+import axios from "@/services/http";
 
 interface CSRStats {
     csrName: string;
@@ -30,14 +30,16 @@ export default function CSRPerformancePage() {
 
         try {
             const token = localStorage.getItem("token");
+            if (!token) throw new Error("Unauthorized: Token not found");
+
             const res = await axios.get(`/api/v1/admin/csr/${id}/stats`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
-            setStats(res.data.data); // assume response { data: CSRStats }
+            setStats(res.data.data || null); // safely handle missing data
         } catch (err: any) {
             console.error(err);
-            setError("Failed to load CSR stats");
+            setError(err?.response?.data?.message || "Failed to load CSR stats");
         } finally {
             setLoading(false);
         }
@@ -64,10 +66,10 @@ export default function CSRPerformancePage() {
                         {stats?.csrName || "CSR"} Performance
                     </h1>
 
-                    {loading && <p>Loading CSR stats...</p>}
+                    {loading && <p className="text-gray-600">Loading CSR stats...</p>}
                     {error && <p className="text-red-500">{error}</p>}
 
-                    {stats && (
+                    {stats && !loading && !error && (
                         <>
                             {/* Summary Cards */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
@@ -94,7 +96,7 @@ export default function CSRPerformancePage() {
                                 />
                             </div>
 
-                            {/* Chart */}
+                            {/* Leads vs Sales Chart */}
                             <div className="bg-white p-4 rounded shadow">
                                 <h2 className="text-xl font-semibold mb-4">Leads vs Sales Over Time</h2>
                                 <CSRStatsChart

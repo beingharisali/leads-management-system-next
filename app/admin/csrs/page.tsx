@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import axios from "@/services/axios";
+import axios from "@/services/http";
 import { useRouter } from "next/navigation";
 
 interface CSR {

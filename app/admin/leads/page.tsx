@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import http from "@/services/http";
-import LeadList, { Lead } from "@/components/LeadList";
 import FilterButtons from "@/components/buttons/FilterButtons";
+
+// Lazy load LeadList to optimize initial bundle
+const LeadList = lazy(() => import("@/components/LeadList"));
+
+export interface Lead {
+    _id: string;
+    name: string;
+    phone: string;
+    course: string;
+    source?: string;
+    status: string;
+    createdAt: string;
+}
 
 type FilterType = "day" | "week" | "month";
 
@@ -24,8 +36,7 @@ export default function LeadsListPage() {
             setLeads(res.data.data || []); // ✅ ensures proper data path
         } catch (err: any) {
             console.error("Failed to fetch leads:", err);
-            // Using centralized error from http.ts
-            setError(err.message || "Failed to load leads");
+            setError(err.response?.data?.message || err.message || "Failed to load leads");
         } finally {
             setLoading(false);
         }
@@ -53,13 +64,11 @@ export default function LeadsListPage() {
                     {loading && <p className="text-gray-600 mt-4">Loading leads...</p>}
                     {error && <p className="text-red-500 mt-4">{error}</p>}
 
-                    {/* Lead List Component */}
+                    {/* Lead List Component (lazy-loaded) */}
                     {!loading && !error && leads.length > 0 && (
-                        <LeadList
-                            leads={leads}
-                            refreshLeads={fetchLeads}
-                            role="csr" // ✅ Fix for TypeScript redline
-                        />
+                        <Suspense fallback={<p>Loading table...</p>}>
+                            <LeadList leads={leads} refreshLeads={fetchLeads} role="csr" />
+                        </Suspense>
                     )}
 
                     {/* No leads */}

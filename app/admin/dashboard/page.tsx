@@ -4,7 +4,7 @@ import RoleGuard from "@/components/RoleGuard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import SummaryCard from "@/components/SummaryCard";
 import { useEffect, useState } from "react";
-import axios from "@/services/axios";
+import axios from "@/services/http";
 import { useRouter } from "next/navigation";
 
 interface CSRStat {

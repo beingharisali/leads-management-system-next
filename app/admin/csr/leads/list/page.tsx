@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import http from "@/services/http";
-import LeadList, { Lead } from "@/components/LeadList";
 import FilterButtons from "@/components/buttons/FilterButtons";
+
+// Lazy load LeadList to optimize bundle size
+const LeadList = lazy(() => import("@/components/LeadList"));
+
+export interface Lead {
+    _id: string;
+    name: string;
+    phone: string;
+    course: string;
+    source?: string;
+    status: string;
+    createdAt: string;
+}
 
 type FilterType = "day" | "week" | "month";
 
@@ -21,11 +33,10 @@ export default function LeadsListPage() {
         setError("");
         try {
             const res = await http.get(`/lead/csr-leads?filter=${filter}`);
-            setLeads(res.data.data || []); // ✅ ensures proper data path
+            setLeads(res.data.data || []);
         } catch (err: any) {
             console.error("Failed to fetch leads:", err);
-            // Using centralized error from http.ts
-            setError(err.message || "Failed to load leads");
+            setError(err.response?.data?.message || err.message || "Failed to load leads");
         } finally {
             setLoading(false);
         }
@@ -41,7 +52,7 @@ export default function LeadsListPage() {
                 <div className="min-h-screen p-6 bg-gray-100">
                     <h1 className="text-3xl font-bold mb-6">My Leads</h1>
 
-                    {/* Filter Buttons (Reusable Component) */}
+                    {/* Filter Buttons */}
                     <FilterButtons
                         options={["day", "week", "month"]}
                         selected={filter}
@@ -49,17 +60,15 @@ export default function LeadsListPage() {
                         labels={{ day: "Today", week: "This Week", month: "This Month" }}
                     />
 
-                    {/* Loading / Error */}
+                    {/* Loading & Error */}
                     {loading && <p className="text-gray-600 mt-4">Loading leads...</p>}
                     {error && <p className="text-red-500 mt-4">{error}</p>}
 
-                    {/* Lead List Component */}
+                    {/* Lead List */}
                     {!loading && !error && leads.length > 0 && (
-                        <LeadList
-                            leads={leads}
-                            refreshLeads={fetchLeads}
-                            role="csr" // ✅ Fix for TypeScript redline
-                        />
+                        <Suspense fallback={<p className="text-gray-600 mt-4">Loading table...</p>}>
+                            <LeadList leads={leads} refreshLeads={fetchLeads} role="csr" />
+                        </Suspense>
                     )}
 
                     {/* No leads */}
