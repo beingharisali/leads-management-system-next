@@ -1,4 +1,4 @@
-// All system roles (global)
+// ==================== All System Roles ====================
 export type UserRole =
   | "admin"
   | "csr"
@@ -7,8 +7,10 @@ export type UserRole =
   | "student"
   | "teacher";
 
+// ==================== User Interface ====================
 export interface User {
-  id: string;
+  _id?: string;         // Backend MongoDB ID (optional)
+  id?: string;          // Frontend-consistent ID (optional)
   name: string;
   email: string;
   role: UserRole;
@@ -16,6 +18,7 @@ export interface User {
   updatedAt?: string;
 }
 
+// ==================== Auth Response Interface ====================
 export interface AuthResponse {
   user: User;
   token: string;

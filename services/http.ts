@@ -1,9 +1,11 @@
 import axios from "axios";
 
+// Base URL
 const baseURL =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
   "http://localhost:5000/api/v1";
 
+// Axios instance
 const http = axios.create({
   baseURL,
   timeout: 15000,
@@ -12,26 +14,31 @@ const http = axios.create({
   },
 });
 
-// Request interceptor to attach token
-http.interceptors.request.use((config) => {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// ==================== Request Interceptor ====================
+http.interceptors.request.use(
+  (config) => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("token");
+      if (token) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-// Response interceptor for centralized error handling
+// ==================== Response Interceptor ====================
 http.interceptors.response.use(
-  (response) => response, // just return response if successful
+  (response) => response,
   (error) => {
-    console.error("API Error:", error.response?.data || error.message);
-    const message =
-      error.response?.data?.message ||
-      error.response?.data?.msg ||
-      error.message ||
-      "Something went wrong. Please try again.";
+    let message = "Something went wrong";
+
+    if (axios.isAxiosError(error)) {
+      message = error.response?.data?.msg || error.message;
+    }
+
     return Promise.reject(new Error(message));
   }
 );

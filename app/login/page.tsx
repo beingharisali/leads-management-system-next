@@ -3,37 +3,47 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/services/auth.api";
+import { AuthResponse } from "@/types/user";
 
 export default function LoginPage() {
     const router = useRouter();
 
+    // Form states
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    // Handle login submit
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
 
         try {
-            const { user, token } = await login(email, password);
+            // Call login API
+            const res: AuthResponse = await login(email, password);
+            const { user, token } = res;
 
-            // save token & user
+            // Safely determine userId as string
+            const userId: string = user._id ?? user.id ?? "";
+
+            // Store in localStorage
             localStorage.setItem("token", token);
             localStorage.setItem("user", JSON.stringify(user));
+            localStorage.setItem("userId", userId);
+            localStorage.setItem("role", user.role);
 
-            // redirect by role
-            if (user.role === "admin") {
-                router.replace("/admin/dashboard");
-            } else if (user.role === "csr") {
-                router.replace("/csr/dashboard");
-            } else {
-                setError("Unauthorized role");
-            }
+            // Redirect based on role
+            if (user.role === "admin") router.replace("/admin/dashboard");
+            else router.replace("/csr/dashboard");
         } catch (err: any) {
-            setError(err?.response?.data?.msg || "Invalid email or password");
+            // Improved error handling
+            const msg =
+                err?.response?.data?.msg ||
+                err?.message ||
+                "Invalid email or password";
+            setError(msg);
         } finally {
             setLoading(false);
         }
@@ -42,12 +52,10 @@ export default function LoginPage() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100">
             <form
-                onSubmit={handleSubmit}
+                onSubmit={handleLogin}
                 className="bg-white p-6 rounded-lg shadow w-96"
             >
-                <h1 className="text-2xl font-bold mb-4 text-center">
-                    Leads Management Login
-                </h1>
+                <h1 className="text-2xl font-bold mb-4 text-center">Login</h1>
 
                 {error && (
                     <p className="text-red-500 text-sm mb-3 text-center">{error}</p>

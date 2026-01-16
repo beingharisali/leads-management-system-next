@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import ConvertLeadModal from "./ConvertLeadModel";
+import { useState, lazy, Suspense } from "react";
 import axios from "@/services/axios";
+
+// Lazy-load modal for production optimization
+const ConvertLeadModal = lazy(() => import("./ConvertLeadModel"));
 
 // Interface for a lead
 export interface Lead {
-    _id: string;           // backend se _id aata hai
+    _id: string;
     name: string;
     phone: string;
     course: string;
@@ -71,8 +73,8 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                             <td className="p-3 border">
                                 <span
                                     className={`px-2 py-1 rounded text-sm font-medium ${lead.status === "converted"
-                                        ? "bg-green-100 text-green-700"
-                                        : "bg-blue-100 text-blue-700"
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-blue-100 text-blue-700"
                                         }`}
                                 >
                                     {lead.status}
@@ -124,14 +126,16 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
 
             {/* Modal for converting lead */}
             {selectedLead && (
-                <ConvertLeadModal
-                    leadId={selectedLead._id}
-                    onClose={() => setSelectedLead(null)}
-                    onSuccess={() => {
-                        refreshLeads();
-                        setSelectedLead(null);
-                    }}
-                />
+                <Suspense fallback={<p>Loading modal...</p>}>
+                    <ConvertLeadModal
+                        leadId={selectedLead._id}
+                        onClose={() => setSelectedLead(null)}
+                        onSuccess={() => {
+                            refreshLeads();
+                            setSelectedLead(null);
+                        }}
+                    />
+                </Suspense>
             )}
         </div>
     );
