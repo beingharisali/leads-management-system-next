@@ -1,0 +1,155 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { getCSRLeads, getCSRStats } from "@/services/dashboard.api";
+import SummaryCard from "@/components/SummaryCard";
+import CSRStatsChart from "@/components/CSRStatsChart";
+import Loading from "@/components/Loading";
+import ErrorMessage from "@/components/ErrorMessage";
+
+type Filter = "day" | "week" | "month";
+
+interface Stats {
+    totalLeads: number;
+    totalSales: number;
+    conversionRate: string;
+    leadsStats: { day: number; week: number; month: number };
+    salesStats: { day: number; week: number; month: number };
+}
+
+interface Lead {
+    _id: string;
+    name: string;
+    course: string;
+    phone: string;
+    status?: string;
+}
+
+export default function CSRDashboard() {
+    const [leads, setLeads] = useState<Lead[]>([]);
+    const [stats, setStats] = useState<Stats>({
+        totalLeads: 0,
+        totalSales: 0,
+        conversionRate: "0%",
+        leadsStats: { day: 0, week: 0, month: 0 },
+        salesStats: { day: 0, week: 0, month: 0 },
+    });
+    const [filter, setFilter] = useState<Filter>("day");
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+
+    const fetchData = async () => {
+        setLoading(true);
+        setError("");
+        try {
+            const [leadsRes, statsRes] = await Promise.all([
+                getCSRLeads(),
+                getCSRStats(filter),
+            ]);
+
+            setLeads(leadsRes.data || []);
+            setStats({
+                totalLeads: statsRes.totalLeads || 0,
+                totalSales: statsRes.totalSales || 0,
+                conversionRate: statsRes.conversionRate || "0%",
+                leadsStats: {
+                    day: statsRes.leadsStats?.day || 0,
+                    week: statsRes.leadsStats?.week || 0,
+                    month: statsRes.leadsStats?.month || 0,
+                },
+                salesStats: {
+                    day: statsRes.salesStats?.day || 0,
+                    week: statsRes.salesStats?.week || 0,
+                    month: statsRes.salesStats?.month || 0,
+                },
+            });
+        } catch (err) {
+            console.error(err);
+            setError("Failed to load CSR data");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, [filter]);
+
+    if (loading) return <Loading />;
+    if (error) return <ErrorMessage message={error} />;
+
+    return (
+        <ProtectedRoute role="csr">
+            <div className="space-y-6 p-6">
+                <h1 className="text-xl font-bold mb-4">CSR Dashboard</h1>
+
+                {/* Filter */}
+                <div className="flex items-center space-x-4 mb-4">
+                    <label className="font-semibold">Select Time Filter:</label>
+                    <select
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value as Filter)}
+                        className="border rounded px-2 py-1"
+                    >
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                    </select>
+                </div>
+
+                {/* Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <SummaryCard title="Total Leads" value={stats.totalLeads} />
+                    <SummaryCard title="Total Sales" value={stats.totalSales} />
+                    <SummaryCard title="Conversion Rate" value={stats.conversionRate} />
+                </div>
+
+                {/* Charts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                    <CSRStatsChart
+                        title="Leads Analytics"
+                        day={stats.leadsStats.day}
+                        week={stats.leadsStats.week}
+                        month={stats.leadsStats.month}
+                    />
+                    <CSRStatsChart
+                        title="Sales Analytics"
+                        day={stats.salesStats.day}
+                        week={stats.salesStats.week}
+                        month={stats.salesStats.month}
+                    />
+                </div>
+
+                {/* Leads Table */}
+                <div className="bg-white p-4 rounded shadow">
+                    <h2 className="text-lg font-semibold mb-4">My Leads</h2>
+                    {leads.length ? (
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b">
+                                    <th className="text-left p-2">Name</th>
+                                    <th className="text-left p-2">Course</th>
+                                    <th className="text-left p-2">Phone</th>
+                                    <th className="text-left p-2">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {leads.map((lead) => (
+                                    <tr key={lead._id} className="border-b">
+                                        <td className="p-2">{lead.name}</td>
+                                        <td className="p-2">{lead.course}</td>
+                                        <td className="p-2">{lead.phone}</td>
+                                        <td className="p-2">{lead.status || "Pending"}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <p className="text-gray-500">No leads available</p>
+                    )}
+                </div>
+            </div>
+        </ProtectedRoute>
+    );
+}

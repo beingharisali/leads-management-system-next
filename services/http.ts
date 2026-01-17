@@ -1,44 +1,35 @@
-import axios from "axios";
+import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-// Base URL
 const baseURL =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
   "http://localhost:5000/api/v1";
 
-// Axios instance
 const http = axios.create({
   baseURL,
+  headers: { "Content-Type": "application/json" },
   timeout: 15000,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
-// ==================== Request Interceptor ====================
 http.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("token");
-      if (token) {
-        config.headers = config.headers || {};
+      if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error: AxiosError) => Promise.reject(error)
 );
 
-// ==================== Response Interceptor ====================
 http.interceptors.response.use(
   (response) => response,
-  (error) => {
+  (error: AxiosError) => {
     let message = "Something went wrong";
-
-    if (axios.isAxiosError(error)) {
-      message = error.response?.data?.msg || error.message;
+    if (error.response?.data) {
+      message = (error.response.data as any)?.msg || error.message || message;
     }
-
     return Promise.reject(new Error(message));
   }
 );

@@ -1,104 +1,115 @@
 "use client";
-
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import http from "@/services/http";
 
-export default function AdminSignupPage() {
+export default function SignupPage() {
+    const router = useRouter();
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [role, setRole] = useState<"csr" | "admin">("csr");
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
+    const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
         setError("");
         setSuccess("");
+        setLoading(true);
 
         try {
-            const token = localStorage.getItem("token"); // Admin JWT token
-            if (!token) {
-                setError("Unauthorized. Login as Admin first.");
-                setLoading(false);
-                return;
-            }
+            // Backend route for first admin signup
+            const res = await http.post("/setup/first-admin", { name, email, password });
+            const { user } = res.data;
 
-            const res = await http.post(
-                "/auth/register",
-                { name, email, password, role },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
-            setSuccess(`User ${res.data.user.name} (${res.data.user.role}) created successfully!`);
-
-            // Reset form
+            setSuccess(`Admin ${user.name} registered successfully! Redirecting to login...`);
             setName("");
             setEmail("");
             setPassword("");
-            setRole("csr");
+
+            setTimeout(() => router.push("/login"), 1500);
         } catch (err: any) {
-            if (err.response?.data?.msg) setError(err.response.data.msg);
-            else setError(err.message || "Failed to create user.");
+            setError(err.response?.data?.msg || err.message || "Something went wrong");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100">
-            <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow w-96">
-                <h1 className="text-2xl font-bold mb-4 text-center">Create New User</h1>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 via-pink-500 to-red-400 px-4">
+            <form
+                onSubmit={handleSignup}
+                className="bg-white/90 backdrop-blur-md p-10 rounded-3xl shadow-2xl max-w-md w-full flex flex-col gap-5"
+            >
+                <h1 className="text-3xl font-extrabold text-center text-gray-900 mb-2">Admin Signup</h1>
 
-                {error && <p className="text-red-500 text-sm mb-3 text-center">{error}</p>}
-                {success && <p className="text-green-500 text-sm mb-3 text-center">{success}</p>}
+                {error && <p className="text-red-600 text-center font-medium animate-pulse">{error}</p>}
+                {success && <p className="text-green-600 text-center font-medium animate-pulse">{success}</p>}
 
                 <input
                     type="text"
-                    placeholder="Name"
-                    className="w-full border p-2 mb-3 rounded"
+                    placeholder="Full Name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
+                    className="border border-gray-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
                 />
 
                 <input
                     type="email"
-                    placeholder="Email"
-                    className="w-full border p-2 mb-3 rounded"
+                    placeholder="Email Address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
+                    className="border border-gray-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
                 />
 
                 <input
                     type="password"
                     placeholder="Password"
-                    className="w-full border p-2 mb-3 rounded"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    className="border border-gray-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
                 />
-
-                <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as "csr" | "admin")}
-                    className="w-full border p-2 mb-4 rounded"
-                >
-                    <option value="csr">CSR</option>
-                    <option value="admin">Admin</option>
-                </select>
 
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 disabled:opacity-60"
+                    className={`py-3 rounded-xl font-semibold text-white transition-all duration-300 
+                        ${loading
+                            ? "bg-gray-400 cursor-not-allowed"
+                            : "bg-purple-600 hover:bg-purple-700 active:scale-95"
+                        }`}
                 >
-                    {loading ? "Creating..." : "Create User"}
+                    {loading ? (
+                        <div className="flex items-center justify-center gap-2">
+                            <span className="loader ease-linear rounded-full border-2 border-t-2 border-white w-5 h-5 animate-spin"></span>
+                            Signing Up...
+                        </div>
+                    ) : (
+                        "Signup"
+                    )}
                 </button>
+
+                <p className="text-sm text-gray-600 text-center mt-3">
+                    Already have an account?{" "}
+                    <span
+                        className="text-purple-600 font-semibold cursor-pointer hover:underline"
+                        onClick={() => router.push("/login")}
+                    >
+                        Login
+                    </span>
+                </p>
             </form>
+
+            {/* Loader CSS */}
+            <style jsx>{`
+                .loader {
+                    border-top-color: transparent;
+                }
+            `}</style>
         </div>
     );
 }

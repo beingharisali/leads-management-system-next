@@ -1,8 +1,7 @@
-import http from "./http";
+import http from "./http"; // Axios instance
 
-// -------------------- Types --------------------
 export interface User {
-  _id: string;         // backend se aata hai
+  _id: string;
   name: string;
   email: string;
   role: "admin" | "csr";
@@ -13,53 +12,24 @@ export interface AuthResponse {
   token: string;
 }
 
-// -------------------- Login API --------------------
-export async function login(
-  email: string,
-  password: string
-): Promise<AuthResponse> {
-  try {
-    const res = await http.post<AuthResponse>("/auth/login", { email, password });
-    return res.data; // { user, token }
-  } catch (err: any) {
-    if (err.response?.data?.msg) throw new Error(err.response.data.msg);
-    if (err instanceof Error) throw new Error(err.message);
-    throw new Error("Login failed. Please try again.");
-  }
-}
+// ===== FIRST ADMIN SIGNUP =====
+export const firstAdminSignup = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
+  return (await http.post("/auth/first-admin-signup", data)).data;
+};
 
-// -------------------- Signup / Register API --------------------
-export async function register(data: {
-  name: string;
-  email: string;
-  password: string;
-  role: "csr" | "admin";
-}): Promise<AuthResponse> {
-  try {
-    const res = await http.post<AuthResponse>("/auth/register", data);
-    return res.data; // { user, token }
-  } catch (err: any) {
-    if (err.response?.data?.msg) throw new Error(err.response.data.msg);
-    if (err instanceof Error) throw new Error(err.message);
-    throw new Error("Signup failed. Please try again.");
-  }
-}
+// ===== LOGIN =====
+export const login = async (email: string, password: string): Promise<AuthResponse> => {
+  return (await http.post("/auth/login", { email, password })).data;
+};
 
-// -------------------- Get currently logged-in user profile --------------------
-export async function getProfile(): Promise<User | null> {
-  try {
-    const res = await http.get<{ user: User }>("/auth/profile");
-    return res.data.user || null;
-  } catch (err) {
-    console.warn("Failed to fetch profile:", err);
-    return null;
-  }
-}
+// ===== CREATE CSR (Admin only) =====
+export const createCSR = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
+  const token = localStorage.getItem("token"); // Admin token
+  if (!token) throw new Error("Admin not authenticated");
 
-// -------------------- Logout --------------------
-export function logoutApi(): void {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
-  localStorage.removeItem("userId");
-  localStorage.removeItem("role");
-}
+  return (
+    await http.post("/auth/register", data, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).data;
+};
