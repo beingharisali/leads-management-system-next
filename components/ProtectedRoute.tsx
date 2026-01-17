@@ -1,29 +1,35 @@
 "use client";
-
-import { useEffect, useState } from "react";
+import { useEffect, ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function ProtectedRoute({
     children,
+    role,
 }: {
-    children: React.ReactNode;
+    children: ReactNode;
+    role?: string;
 }) {
     const router = useRouter();
-    const [checked, setChecked] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const token =
-            typeof window !== "undefined" ? localStorage.getItem("token") : null;
+        const token = localStorage.getItem("token");
+        const userRole = localStorage.getItem("role");
 
-        if (!token) {
-            router.replace("/login");
+        if (!token || (role && userRole !== role)) {
+            router.push("/login");
         } else {
-            setChecked(true);
+            setLoading(false); // user authorized
         }
-    }, [router]);
+    }, [router, role]);
 
-    // jab tak check complete na ho, kuch render na karo
-    if (!checked) return null;
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <p className="text-lg font-medium">Checking authentication...</p>
+            </div>
+        );
+    }
 
     return <>{children}</>;
 }
