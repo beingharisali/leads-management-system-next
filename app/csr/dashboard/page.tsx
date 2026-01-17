@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { getCSRLeads, getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
@@ -27,6 +28,7 @@ interface Lead {
 }
 
 export default function CSRDashboard() {
+    const router = useRouter();
     const [leads, setLeads] = useState<Lead[]>([]);
     const [stats, setStats] = useState<Stats>({
         totalLeads: 0,
@@ -39,6 +41,7 @@ export default function CSRDashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
+    // Fetch leads & stats
     const fetchData = async () => {
         setLoading(true);
         setError("");
@@ -83,6 +86,28 @@ export default function CSRDashboard() {
         <ProtectedRoute role="csr">
             <div className="space-y-6 p-6">
                 <h1 className="text-xl font-bold mb-4">CSR Dashboard</h1>
+
+                {/* Action Buttons */}
+                <div className="flex space-x-4 mb-4">
+                    <button
+                        onClick={() => router.push("/csr/leads/create")}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                        + Create Lead
+                    </button>
+                    <button
+                        onClick={() => router.push("/csr/leads/upload")}
+                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    >
+                        Upload Excel Leads
+                    </button>
+                    <button
+                        onClick={() => router.push("/csr/leads/sales")}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                    >
+                        View Sales
+                    </button>
+                </div>
 
                 {/* Filter */}
                 <div className="flex items-center space-x-4 mb-4">
