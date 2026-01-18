@@ -32,7 +32,7 @@ export default function RoleGuard({ allowedRole, children }: RoleGuardProps) {
                 const jwtDecode = (await import("jwt-decode")).default;
                 const decoded = jwtDecode<DecodedToken>(token);
 
-                // token expired
+                // Check if token expired
                 if (decoded.exp * 1000 < Date.now()) {
                     localStorage.removeItem("token");
                     router.replace("/login");
@@ -40,7 +40,7 @@ export default function RoleGuard({ allowedRole, children }: RoleGuardProps) {
                     return;
                 }
 
-                // role check
+                // Check role
                 if (decoded.role !== allowedRole) {
                     router.replace("/login");
                     setIsAllowed(false);
@@ -59,7 +59,7 @@ export default function RoleGuard({ allowedRole, children }: RoleGuardProps) {
         checkRole();
     }, [router, allowedRole]);
 
-    // wait until role check completes
+    // Wait until role check completes to avoid flicker
     if (isAllowed === null) return null;
 
     return <>{children}</>;

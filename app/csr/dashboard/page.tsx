@@ -3,12 +3,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { getMyLeads, uploadExcelLeads } from "@/services/lead.api";
+import {
+    getLeadsByRole,
+    updateLead,
+    deleteLead,
+    convertLeadToSale,
+    uploadExcelLeads,
+} from "@/services/lead.api";
 import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
+import { getUserRole, getUserId } from "@/utils/decodeToken";
 
 type Filter = "day" | "week" | "month";
 
@@ -26,6 +33,7 @@ interface Lead {
     course: string;
     phone: string;
     status?: string;
+    assignedTo?: { _id: string; name: string } | null;
 }
 
 export default function CSRDashboard() {
@@ -45,29 +53,42 @@ export default function CSRDashboard() {
 
     // ================= Fetch Leads & Stats =================
     const fetchData = async () => {
+        const role = await getUserRole();
+        const userId = await getUserId(); // CSR ID
+
+        if (!role || !userId) {
+            setError("User role or ID not found");
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         setError("");
-        try {
-            const [leadsRes, statsRes] = await Promise.all([getMyLeads(), getCSRStats(filter)]);
 
-            setLeads(leadsRes.data || []);
+        try {
+            // ✅ Fixed getLeadsByRole call type
+            const leadsRes: Lead[] = await getLeadsByRole(role, userId);
+            const statsRes = await getCSRStats(filter);
+
+            setLeads(leadsRes ?? []);
+
             setStats({
-                totalLeads: statsRes.totalLeads || 0,
-                totalSales: statsRes.totalSales || 0,
-                conversionRate: statsRes.conversionRate || "0%",
+                totalLeads: statsRes?.totalLeads ?? 0,
+                totalSales: statsRes?.totalSales ?? 0,
+                conversionRate: statsRes?.conversionRate ?? "0%",
                 leadsStats: {
-                    day: statsRes.leadsStats?.day || 0,
-                    week: statsRes.leadsStats?.week || 0,
-                    month: statsRes.leadsStats?.month || 0,
+                    day: statsRes?.leadsStats?.day ?? 0,
+                    week: statsRes?.leadsStats?.week ?? 0,
+                    month: statsRes?.leadsStats?.month ?? 0,
                 },
                 salesStats: {
-                    day: statsRes.salesStats?.day || 0,
-                    week: statsRes.salesStats?.week || 0,
-                    month: statsRes.salesStats?.month || 0,
+                    day: statsRes?.salesStats?.day ?? 0,
+                    week: statsRes?.salesStats?.week ?? 0,
+                    month: statsRes?.salesStats?.month ?? 0,
                 },
             });
         } catch (err: any) {
-            console.error(err);
+            console.error("CSR fetch error:", err);
             setError(err.message || "Failed to load CSR data");
         } finally {
             setLoading(false);
@@ -89,13 +110,37 @@ export default function CSRDashboard() {
         try {
             await uploadExcelLeads(file);
             alert("✅ Excel uploaded successfully");
-            fetchData(); // Refresh dashboard after upload
+            fetchData();
         } catch (err: any) {
-            console.error(err);
+            console.error("Excel upload error:", err);
             setError(err.message || "❌ Failed to upload Excel");
         } finally {
             setUploading(false);
-            e.target.value = ""; // reset input
+            e.target.value = "";
+        }
+    };
+
+    // ================= Lead Actions =================
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure to delete this lead?")) return;
+        try {
+            await deleteLead(id);
+            fetchData();
+        } catch (err: any) {
+            console.error("Delete lead error:", err);
+            alert("❌ Failed to delete lead");
+        }
+    };
+
+    const handleConvertToSale = async (id: string) => {
+        const amount = parseFloat(prompt("Enter sale amount:") || "0");
+        if (!amount) return;
+        try {
+            await convertLeadToSale(id, amount);
+            fetchData();
+        } catch (err: any) {
+            console.error("Convert to sale error:", err);
+            alert("❌ Failed to convert lead to sale");
         }
     };
 
@@ -183,6 +228,7 @@ export default function CSRDashboard() {
                                     <th className="text-left p-2">Course</th>
                                     <th className="text-left p-2">Phone</th>
                                     <th className="text-left p-2">Status</th>
+                                    <th className="text-left p-2">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -192,6 +238,20 @@ export default function CSRDashboard() {
                                         <td className="p-2">{lead.course}</td>
                                         <td className="p-2">{lead.phone}</td>
                                         <td className="p-2">{lead.status || "Pending"}</td>
+                                        <td className="p-2 space-x-2">
+                                            <button
+                                                onClick={() => handleConvertToSale(lead._id)}
+                                                className="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-xs"
+                                            >
+                                                Convert to Sale
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(lead._id)}
+                                                className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs"
+                                            >
+                                                Delete
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
