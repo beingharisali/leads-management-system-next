@@ -1,6 +1,12 @@
 "use client";
+
 import { useEffect, ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
+import jwtDecode from "jwt-decode"
+interface DecodedToken {
+    role: string;
+    exp: number;
+}
 
 export default function ProtectedRoute({
     children,
@@ -14,12 +20,32 @@ export default function ProtectedRoute({
 
     useEffect(() => {
         const token = localStorage.getItem("token");
-        const userRole = localStorage.getItem("role");
 
-        if (!token || (role && userRole !== role)) {
-            router.push("/login");
-        } else {
-            setLoading(false); // user authorized
+        if (!token) {
+            router.replace("/login");
+            return;
+        }
+
+        try {
+            const decoded = jwtDecode<DecodedToken>(token);
+
+            // token expired
+            if (decoded.exp * 1000 < Date.now()) {
+                localStorage.removeItem("token");
+                router.replace("/login");
+                return;
+            }
+
+            // role mismatch
+            if (role && decoded.role !== role) {
+                router.replace("/login");
+                return;
+            }
+
+            setLoading(false); // ✅ authorized
+        } catch (err) {
+            localStorage.removeItem("token");
+            router.replace("/login");
         }
     }, [router, role]);
 
