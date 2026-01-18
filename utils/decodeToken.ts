@@ -2,11 +2,12 @@
 
 interface DecodedToken {
     role: "admin" | "csr";
-    userId?: string; // agar user id chahiye
-    [key: string]: any; // extra fields if any
+    userId?: string;
+    name?: string;
+    [key: string]: any;
 }
 
-// ✅ Get user role from token
+/* ================= GET USER ROLE ================= */
 export async function getUserRole(): Promise<"admin" | "csr" | null> {
     if (typeof window === "undefined") return null;
 
@@ -17,13 +18,13 @@ export async function getUserRole(): Promise<"admin" | "csr" | null> {
         const jwtDecode = (await import("jwt-decode")).default;
         const decoded: DecodedToken = jwtDecode(token);
         return decoded.role ?? null;
-    } catch (err) {
-        console.error("JWT decode error:", err);
+    } catch (error) {
+        console.error("JWT decode error (role):", error);
         return null;
     }
 }
 
-// ✅ Get user ID from token
+/* ================= GET USER ID ================= */
 export async function getUserId(): Promise<string | null> {
     if (typeof window === "undefined") return null;
 
@@ -34,8 +35,19 @@ export async function getUserId(): Promise<string | null> {
         const jwtDecode = (await import("jwt-decode")).default;
         const decoded: DecodedToken = jwtDecode(token);
         return decoded.userId ?? null;
-    } catch (err) {
-        console.error("JWT decode error:", err);
+    } catch (error) {
+        console.error("JWT decode error (userId):", error);
         return null;
     }
+}
+
+/* ================= LOGOUT ================= */
+export function logout() {
+    if (typeof window === "undefined") return;
+
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    // hard redirect (safe for utils file)
+    window.location.href = "/login";
 }
