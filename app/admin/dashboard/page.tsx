@@ -49,7 +49,7 @@ export default function AdminDashboardPage() {
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<"day" | "week" | "month">("day");
 
-    // CSR Modal
+    // CSR Modal State
     const [showCSRModal, setShowCSRModal] = useState(false);
     const [csrName, setCsrName] = useState("");
     const [csrEmail, setCsrEmail] = useState("");
@@ -58,7 +58,7 @@ export default function AdminDashboardPage() {
     const [csrLoading, setCsrLoading] = useState(false);
     const [csrSuccess, setCsrSuccess] = useState("");
 
-    // Lead Modal
+    // Lead Modal State
     const [showLeadModal, setShowLeadModal] = useState(false);
     const [leadName, setLeadName] = useState("");
     const [leadPhone, setLeadPhone] = useState("");
@@ -68,14 +68,14 @@ export default function AdminDashboardPage() {
 
     const [uploading, setUploading] = useState(false);
 
-    // ================== FETCH STATS & LEADS ==================
+    // ================= FETCH STATS & LEADS =================
     const fetchStats = async () => {
         setLoading(true);
         setError("");
         try {
             const [statsRes, leadsRes] = await Promise.all([
                 getAdminStats(filter),
-                getLeadsByRole("admin"), // Admin ke liye sab leads
+                getLeadsByRole("admin"),
             ]);
 
             setData({
@@ -109,7 +109,7 @@ export default function AdminDashboardPage() {
         fetchStats();
     }, [filter]);
 
-    // ================== CREATE CSR ==================
+    // ================= CREATE CSR =================
     const handleCreateCSR = async (e: React.FormEvent) => {
         e.preventDefault();
         setCsrError("");
@@ -128,7 +128,7 @@ export default function AdminDashboardPage() {
         }
     };
 
-    // ================== CREATE / UPDATE LEAD ==================
+    // ================= CREATE / UPDATE LEAD =================
     const handleLeadSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -147,39 +147,37 @@ export default function AdminDashboardPage() {
                     assignedTo: assignedCSR || undefined,
                 });
             }
-
             setShowLeadModal(false);
             setLeadIdEditing(null);
             setLeadName(""); setLeadPhone(""); setLeadCourse(""); setAssignedCSR(null);
             fetchStats();
         } catch (err: any) {
-            alert(err.message || "Failed to save lead");
+            alert(err.response?.data?.msg || "Failed to save lead");
         }
     };
 
-    // ================== DELETE LEAD ==================
+    // ================= DELETE LEAD =================
     const handleDeleteLead = async (id: string) => {
         if (!confirm("Are you sure you want to delete this lead?")) return;
         try {
             await deleteLead(id);
             fetchStats();
         } catch (err: any) {
-            alert(err.message || "Failed to delete lead");
+            alert(err.response?.data?.msg || "Failed to delete lead");
         }
     };
 
-    // ================== EXCEL UPLOAD ==================
+    // ================= EXCEL UPLOAD =================
     const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.length) return;
         const file = e.target.files[0];
-
         setUploading(true);
         try {
             await uploadExcelLeads(file);
             alert("✅ Excel uploaded successfully");
             fetchStats();
         } catch (err: any) {
-            alert(err.message || "❌ Failed to upload Excel");
+            alert(err.response?.data?.msg || "❌ Failed to upload Excel");
         } finally {
             setUploading(false);
             e.target.value = "";
@@ -189,16 +187,13 @@ export default function AdminDashboardPage() {
     if (loading) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
 
-    // ================== JSX ==================
+    // ================= JSX =================
     return (
         <div className="space-y-6 p-6">
-            {/* CREATE CSR BUTTON */}
+            {/* HEADER + CREATE CSR */}
             <div className="flex justify-between items-center mb-4">
                 <h1 className="text-xl font-bold">Admin Dashboard</h1>
-                <button
-                    onClick={() => setShowCSRModal(true)}
-                    className="bg-green-600 text-white px-4 py-2 rounded"
-                >
+                <button onClick={() => setShowCSRModal(true)} className="bg-green-600 text-white px-4 py-2 rounded">
                     + Create CSR
                 </button>
             </div>
@@ -212,7 +207,9 @@ export default function AdminDashboardPage() {
                             <input placeholder="Name" value={csrName} onChange={e => setCsrName(e.target.value)} required className="border p-2 rounded" />
                             <input type="email" placeholder="Email" value={csrEmail} onChange={e => setCsrEmail(e.target.value)} required className="border p-2 rounded" />
                             <input type="password" placeholder="Password" value={csrPassword} onChange={e => setCsrPassword(e.target.value)} required className="border p-2 rounded" />
-                            <button type="submit" disabled={csrLoading} className="bg-blue-600 text-white py-2 rounded mt-2">{csrLoading ? "Creating..." : "Create CSR"}</button>
+                            <button type="submit" disabled={csrLoading} className="bg-blue-600 text-white py-2 rounded mt-2">
+                                {csrLoading ? "Creating..." : "Create CSR"}
+                            </button>
                             {csrError && <p className="text-red-500 text-sm">{csrError}</p>}
                             {csrSuccess && <p className="text-green-500 text-sm">{csrSuccess}</p>}
                         </form>
@@ -221,7 +218,7 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
-            {/* EXCEL UPLOAD & CREATE LEAD */}
+            {/* CREATE LEAD + UPLOAD */}
             <div className="flex space-x-4 mb-4">
                 <button onClick={() => setShowLeadModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">+ Create Lead</button>
                 <label className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer">
@@ -271,7 +268,7 @@ export default function AdminDashboardPage() {
                 ) : <p className="text-gray-500">No leads available</p>}
             </div>
 
-            {/* FILTER & SUMMARY CARDS & CHARTS */}
+            {/* FILTER & SUMMARY CARDS */}
             <div className="flex items-center space-x-4 mb-4">
                 <label className="font-semibold">Select Time Filter:</label>
                 <select value={filter} onChange={(e) => setFilter(e.target.value as "day" | "week" | "month")} className="border rounded px-2 py-1">
