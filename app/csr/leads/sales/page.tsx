@@ -3,108 +3,79 @@
 import { useEffect, useState } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import axios from "@/services/http";
+import Loading from "@/components/Loading";
+import ErrorMessage from "@/components/ErrorMessage";
+import http from "@/services/http";
 
 interface Sale {
     _id: string;
-    lead: { name: string; email: string };
+    name: string;
+    course: string;
+    phone: string;
     amount: number;
-    status: string;
-    createdAt: string;
+    date: string;
 }
 
-export default function CsrSalesPage() {
+export default function SalesPage() {
     const [sales, setSales] = useState<Sale[]>([]);
     const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const limit = 10; // 10 sales per page
+    const [error, setError] = useState("");
 
-    const fetchSales = async (pageNumber = 1) => {
+    // ================= Fetch CSR Sales =================
+    const fetchSales = async () => {
         setLoading(true);
+        setError("");
         try {
-            const token = localStorage.getItem("token");
-            const userId = localStorage.getItem("userId");
-            if (!userId) throw new Error("User ID not found");
-
-            const res = await axios.get(
-                `/api/v1/sales/get-sales-by-csr/${userId}?page=${pageNumber}&limit=${limit}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
-            setSales(res.data.data || []);
-            setTotalPages(res.data.totalPages || 1);
-            setPage(res.data.page || 1);
+            const res = await http.get("/sales/my-sales"); // CSR: own sales
+            setSales(res.data || []);
         } catch (err: any) {
             console.error(err);
-            alert(err?.response?.data?.message || "Failed to fetch sales");
+            setError(err?.response?.data?.msg || err?.message || "Failed to fetch sales");
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchSales(page);
-    }, [page]);
+        fetchSales();
+    }, []);
+
+    if (loading) return <Loading />;
+    if (error) return <ErrorMessage message={error} />;
 
     return (
-        <ProtectedRoute>
+        <ProtectedRoute role="csr">
             <RoleGuard allowedRole="csr">
-                <div className="p-6 min-h-screen bg-gray-100">
+                <div className="max-w-4xl mx-auto mt-10 p-6 bg-white shadow rounded space-y-4">
                     <h1 className="text-2xl font-bold mb-4">My Sales</h1>
 
-                    {loading ? (
-                        <p className="text-gray-600">Loading sales...</p>
-                    ) : sales.length === 0 ? (
-                        <p className="text-gray-600">No sales found.</p>
-                    ) : (
-                        <>
-                            <div className="overflow-x-auto rounded shadow bg-white">
-                                <table className="min-w-full border-collapse">
-                                    <thead className="bg-gray-200">
-                                        <tr>
-                                            <th className="p-2 border">Lead Name</th>
-                                            <th className="p-2 border">Email</th>
-                                            <th className="p-2 border">Amount</th>
-                                            <th className="p-2 border">Status</th>
-                                            <th className="p-2 border">Date</th>
+                    {sales.length ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm border-collapse">
+                                <thead>
+                                    <tr className="border-b bg-gray-100">
+                                        <th className="text-left p-2">Name</th>
+                                        <th className="text-left p-2">Course</th>
+                                        <th className="text-left p-2">Phone</th>
+                                        <th className="text-left p-2">Amount</th>
+                                        <th className="text-left p-2">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sales.map((sale) => (
+                                        <tr key={sale._id} className="border-b hover:bg-gray-50">
+                                            <td className="p-2">{sale.name}</td>
+                                            <td className="p-2">{sale.course}</td>
+                                            <td className="p-2">{sale.phone}</td>
+                                            <td className="p-2">₹{sale.amount}</td>
+                                            <td className="p-2">{new Date(sale.date).toLocaleDateString()}</td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        {sales.map((sale) => (
-                                            <tr key={sale._id} className="text-center hover:bg-gray-50">
-                                                <td className="p-2 border">{sale.lead.name}</td>
-                                                <td className="p-2 border">{sale.lead.email}</td>
-                                                <td className="p-2 border">${sale.amount}</td>
-                                                <td className="p-2 border">{sale.status}</td>
-                                                <td className="p-2 border">
-                                                    {new Date(sale.createdAt).toLocaleDateString()}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* Pagination Buttons */}
-                            <div className="flex justify-center gap-2 mt-4">
-                                <button
-                                    className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50 hover:bg-gray-400 transition-colors"
-                                    disabled={page <= 1}
-                                    onClick={() => setPage((p) => p - 1)}
-                                >
-                                    Previous
-                                </button>
-                                <span className="px-3 py-1">{page} / {totalPages}</span>
-                                <button
-                                    className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50 hover:bg-gray-400 transition-colors"
-                                    disabled={page >= totalPages}
-                                    onClick={() => setPage((p) => p + 1)}
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        </>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <p className="text-gray-500">No sales available</p>
                     )}
                 </div>
             </RoleGuard>

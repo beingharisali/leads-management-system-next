@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { getCSRLeads, getCSRStats } from "@/services/dashboard.api";
+import { getMyLeads, uploadExcelLeads } from "@/services/lead.api";
+import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
@@ -40,16 +41,14 @@ export default function CSRDashboard() {
     const [filter, setFilter] = useState<Filter>("day");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [uploading, setUploading] = useState(false);
 
-    // Fetch leads & stats
+    // ================= Fetch Leads & Stats =================
     const fetchData = async () => {
         setLoading(true);
         setError("");
         try {
-            const [leadsRes, statsRes] = await Promise.all([
-                getCSRLeads(),
-                getCSRStats(filter),
-            ]);
+            const [leadsRes, statsRes] = await Promise.all([getMyLeads(), getCSRStats(filter)]);
 
             setLeads(leadsRes.data || []);
             setStats({
@@ -67,9 +66,9 @@ export default function CSRDashboard() {
                     month: statsRes.salesStats?.month || 0,
                 },
             });
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            setError("Failed to load CSR data");
+            setError(err.message || "Failed to load CSR data");
         } finally {
             setLoading(false);
         }
@@ -78,6 +77,27 @@ export default function CSRDashboard() {
     useEffect(() => {
         fetchData();
     }, [filter]);
+
+    // ================= Excel Upload =================
+    const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files?.length) return;
+        const file = e.target.files[0];
+
+        setUploading(true);
+        setError("");
+
+        try {
+            await uploadExcelLeads(file);
+            alert("✅ Excel uploaded successfully");
+            fetchData(); // Refresh dashboard after upload
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || "❌ Failed to upload Excel");
+        } finally {
+            setUploading(false);
+            e.target.value = ""; // reset input
+        }
+    };
 
     if (loading) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
@@ -95,12 +115,18 @@ export default function CSRDashboard() {
                     >
                         + Create Lead
                     </button>
-                    <button
-                        onClick={() => router.push("/csr/leads/upload")}
-                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                    >
-                        Upload Excel Leads
-                    </button>
+
+                    <label className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer">
+                        {uploading ? "Uploading..." : "Upload Excel Leads"}
+                        <input
+                            type="file"
+                            accept=".xlsx,.xls"
+                            className="hidden"
+                            onChange={handleExcelUpload}
+                            disabled={uploading}
+                        />
+                    </label>
+
                     <button
                         onClick={() => router.push("/csr/leads/sales")}
                         className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"

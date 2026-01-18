@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import http from "@/services/http";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
+import { uploadExcelLeads, getMyLeads } from "@/services/lead.api";
 
 export default function UploadLeadsPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -11,77 +11,57 @@ export default function UploadLeadsPage() {
     const [message, setMessage] = useState("");
     const [messageType, setMessageType] = useState<"success" | "error">("success");
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files.length > 0) {
-            setFile(e.target.files[0]);
-            setMessage(""); // clear message when new file selected
-        }
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleUpload = async () => {
         if (!file) {
-            setMessage("Please select an Excel file to upload.");
             setMessageType("error");
-            return;
+            return setMessage("❌ Please select a file");
         }
 
         setLoading(true);
         setMessage("");
 
         try {
-            const formData = new FormData();
-            formData.append("file", file);
-
-            const res = await http.post("/lead/upload-excel", formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-            });
-
-            setMessage(res.data?.msg || `✅ ${file.name} uploaded successfully`);
+            await uploadExcelLeads(file);
             setMessageType("success");
-            setFile(null); // reset input
+            setMessage("✅ Excel uploaded successfully");
+
+            // Refresh CSR leads if needed
+            await getMyLeads(); // optionally update state if passing to dashboard
         } catch (err: any) {
             console.error(err);
-            setMessage(err?.response?.data?.msg || "❌ Failed to upload Excel");
             setMessageType("error");
+            setMessage(err?.message || "❌ Failed to upload Excel");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <ProtectedRoute>
+        <ProtectedRoute role="csr">
             <RoleGuard allowedRole="csr">
-                <div className="max-w-lg mx-auto mt-10 bg-white p-6 shadow rounded">
-                    <h1 className="text-2xl font-bold mb-4 text-center">Upload Leads via Excel</h1>
+                <div className="max-w-xl mx-auto mt-10 bg-white p-6 shadow rounded space-y-4">
+                    <h1 className="text-2xl font-bold">Upload Excel Leads</h1>
 
                     {message && (
-                        <p
-                            className={`mb-3 text-sm ${messageType === "success" ? "text-green-600" : "text-red-600"
-                                }`}
-                        >
+                        <p className={`text-sm ${messageType === "success" ? "text-green-600" : "text-red-600"}`}>
                             {message}
                         </p>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <input
-                            type="file"
-                            accept=".xlsx, .xls"
-                            onChange={handleFileChange}
-                            className="w-full border p-2 rounded"
-                            required
-                        />
-                        {file && <p className="text-gray-600 text-sm">Selected file: {file.name}</p>}
+                    <input
+                        type="file"
+                        accept=".xlsx, .xls"
+                        onChange={(e) => e.target.files && setFile(e.target.files[0])}
+                        className="border p-2 rounded w-full"
+                    />
 
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 transition-colors"
-                        >
-                            {loading ? "Uploading..." : "Upload Excel"}
-                        </button>
-                    </form>
+                    <button
+                        onClick={handleUpload}
+                        disabled={loading}
+                        className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors"
+                    >
+                        {loading ? "Uploading..." : "Upload"}
+                    </button>
                 </div>
             </RoleGuard>
         </ProtectedRoute>
