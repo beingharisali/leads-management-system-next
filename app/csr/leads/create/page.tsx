@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import http from "@/services/http";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
+import { createLead } from "@/services/lead.api";
 
 export default function CreateLeadPage() {
     const [name, setName] = useState("");
@@ -20,21 +20,18 @@ export default function CreateLeadPage() {
         setMessage("");
 
         try {
-            await http.post("/lead/create-leads", { name, phone, course, source });
-
+            await createLead({ name, phone, course, source });
             setMessage("✅ Lead created successfully");
             setMessageType("success");
 
+            // Reset form
             setName("");
             setPhone("");
             setCourse("");
             setSource("");
-
-            // Auto-clear message after 3 sec
-            setTimeout(() => setMessage(""), 3000);
         } catch (err: any) {
             console.error(err);
-            setMessage(err?.response?.data?.msg || "❌ Failed to create lead");
+            setMessage(err?.message || "❌ Failed to create lead");
             setMessageType("error");
         } finally {
             setLoading(false);
@@ -48,48 +45,18 @@ export default function CreateLeadPage() {
                     <h1 className="text-2xl font-bold mb-4">Create New Lead</h1>
 
                     {message && (
-                        <p
-                            className={`mb-3 text-sm ${messageType === "success" ? "text-green-600" : "text-red-600"
-                                }`}
-                        >
+                        <p className={`mb-3 text-sm ${messageType === "success" ? "text-green-600" : "text-red-600"}`}>
                             {message}
                         </p>
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-3">
-                        <input
-                            placeholder="Name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full border p-2 rounded"
-                            required
-                        />
-                        <input
-                            placeholder="Phone"
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            className="w-full border p-2 rounded"
-                            required
-                        />
-                        <input
-                            placeholder="Course"
-                            value={course}
-                            onChange={(e) => setCourse(e.target.value)}
-                            className="w-full border p-2 rounded"
-                            required
-                        />
-                        <input
-                            placeholder="Source (optional)"
-                            value={source}
-                            onChange={(e) => setSource(e.target.value)}
-                            className="w-full border p-2 rounded"
-                        />
+                        <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full border p-2 rounded" required />
+                        <input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full border p-2 rounded" required />
+                        <input placeholder="Course" value={course} onChange={(e) => setCourse(e.target.value)} className="w-full border p-2 rounded" required />
+                        <input placeholder="Source (optional)" value={source} onChange={(e) => setSource(e.target.value)} className="w-full border p-2 rounded" />
 
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 transition-colors"
-                        >
+                        <button type="submit" disabled={loading} className="w-full bg-black text-white py-2 rounded hover:bg-gray-800 transition-colors">
                             {loading ? "Saving..." : "Create Lead"}
                         </button>
                     </form>
