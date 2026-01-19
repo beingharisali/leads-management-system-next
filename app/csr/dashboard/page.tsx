@@ -12,7 +12,7 @@ import {
     updateLead,
     LeadPayload,
 } from "@/services/lead.api";
-import { getCSRStats, getAdminStats } from "@/services/dashboard.api";
+import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
@@ -40,7 +40,7 @@ interface Lead {
     assignedTo?: { _id: string; name: string } | null;
 }
 
-// ================= DASHBOARD COMPONENT =================
+// ================= CSR DASHBOARD =================
 export default function CSRDashboard() {
     const router = useRouter();
 
@@ -58,7 +58,6 @@ export default function CSRDashboard() {
     const [error, setError] = useState("");
     const [uploading, setUploading] = useState(false);
     const [csrId, setCsrId] = useState<string | null>(null);
-    const [role, setRole] = useState<"csr" | "admin" | null>(null);
 
     // ================= Lead Modal States =================
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,27 +70,25 @@ export default function CSRDashboard() {
             setLoading(true);
             setError("");
 
-            const userRole = await getUserRole();
+            const role = await getUserRole();
             const userId = await getUserId();
-            if (!userRole || !userId) throw new Error("User not authenticated");
+            if (!role || !userId) throw new Error("User not authenticated");
 
-            setRole(userRole);
             setCsrId(userId);
 
-            if (userRole === "csr") {
-                const [leadsRes, statsRes] = await Promise.all([
-                    getLeadsByRole(userRole, userId),
-                    getCSRStats(filter),
-                ]);
-                setLeads(leadsRes || []);
-                setStats(statsRes || stats);
-            } else if (userRole === "admin") {
-                const statsRes = await getAdminStats(filter);
-                setStats(statsRes || stats);
-                // Optional: fetch all CSR leads if needed
-                const leadsRes = await getLeadsByRole("admin", "");
-                setLeads(leadsRes || []);
-            }
+            const [leadsRes, statsRes] = await Promise.all([
+                getLeadsByRole(role, userId),
+                getCSRStats(filter),
+            ]);
+
+            setLeads(leadsRes || []);
+            setStats({
+                totalLeads: statsRes?.totalLeads ?? 0,
+                totalSales: statsRes?.totalSales ?? 0,
+                conversionRate: statsRes?.conversionRate ?? "0%",
+                leadsStats: statsRes?.leadsStats ?? { day: 0, week: 0, month: 0 },
+                salesStats: statsRes?.salesStats ?? { day: 0, week: 0, month: 0 },
+            });
         } catch (err: any) {
             setError(err.message || "Failed to load dashboard");
         } finally {
@@ -105,7 +102,6 @@ export default function CSRDashboard() {
 
     // ================= ACTIONS =================
     const handleDelete = async (id: string) => {
-        if (role !== "csr") return;
         if (!confirm("Are you sure you want to delete this lead?")) return;
         try {
             await deleteLead(id);
@@ -118,7 +114,6 @@ export default function CSRDashboard() {
     };
 
     const handleConvertToSale = async (id: string) => {
-        if (role !== "csr") return; // Only CSR can convert
         const amountStr = prompt("Enter sale amount:");
         const amount = amountStr ? Number(amountStr) : 0;
         if (!amount || amount <= 0) return toast.error("Invalid sale amount");
@@ -134,7 +129,6 @@ export default function CSRDashboard() {
     };
 
     const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!role || role !== "csr") return; // Only CSR can upload leads
         if (!e.target.files?.length) return;
         try {
             setUploading(true);
@@ -163,7 +157,6 @@ export default function CSRDashboard() {
     };
 
     const openEditModal = (lead: Lead) => {
-        if (role !== "csr") return; // Admin cannot edit
         setEditingLead(lead);
         setLeadForm({ name: lead.name, course: lead.course, phone: lead.phone });
         setIsModalOpen(true);
@@ -174,7 +167,7 @@ export default function CSRDashboard() {
     };
 
     const handleLeadFormSubmit = async () => {
-        if (!csrId || role !== "csr") return toast.error("CSR ID not found or unauthorized");
+        if (!csrId) return toast.error("CSR ID not found");
 
         try {
             if (!leadForm.name || !leadForm.course || !leadForm.phone)
@@ -207,17 +200,15 @@ export default function CSRDashboard() {
     if (error) return <ErrorMessage message={error} />;
 
     return (
-        <ProtectedRoute role={role || "csr"}>
+        <ProtectedRoute role="csr">
             <Toaster position="top-right" reverseOrder={false} />
             <div className="p-6 space-y-6">
 
                 {/* Header */}
                 <div className="flex justify-between items-center">
                     <div>
-                        <h1 className="text-3xl font-bold">
-                            {role === "csr" ? "CSR Dashboard" : "Admin Dashboard"}
-                        </h1>
-                        {csrId && <p className="text-gray-500 mt-1">ID: {csrId}</p>}
+                        <h1 className="text-3xl font-bold">CSR Dashboard</h1>
+                        <p className="text-gray-500 mt-1">CSR ID: {csrId}</p>
                     </div>
                     <button
                         onClick={handleLogout}
@@ -238,14 +229,12 @@ export default function CSRDashboard() {
                         <option value="week">Week</option>
                         <option value="month">Month</option>
                     </select>
-                    {role === "csr" && (
-                        <button
-                            onClick={openCreateModal}
-                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                        >
-                            + Create Lead
-                        </button>
-                    )}
+                    <button
+                        onClick={openCreateModal}
+                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                    >
+                        + Create Lead
+                    </button>
                 </div>
 
                 {/* Summary Cards */}
@@ -263,9 +252,7 @@ export default function CSRDashboard() {
 
                 {/* Leads Table */}
                 <div className="bg-white shadow rounded p-4 mt-6">
-                    <h2 className="font-semibold mb-3">
-                        {role === "csr" ? "My Leads" : "All CSR Leads"}
-                    </h2>
+                    <h2 className="font-semibold mb-3">My Leads</h2>
                     {leads.length ? (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm table-auto">
@@ -275,7 +262,7 @@ export default function CSRDashboard() {
                                         <th className="p-2 text-left">Course</th>
                                         <th className="p-2 text-left">Phone</th>
                                         <th className="p-2 text-left">Status</th>
-                                        {role === "csr" && <th className="p-2 text-left">Actions</th>}
+                                        <th className="p-2 text-left">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -285,28 +272,26 @@ export default function CSRDashboard() {
                                             <td className="p-2">{l.course}</td>
                                             <td className="p-2">{l.phone}</td>
                                             <td className="p-2">{l.status || "Pending"}</td>
-                                            {role === "csr" && (
-                                                <td className="p-2 space-x-2">
-                                                    <button
-                                                        onClick={() => openEditModal(l)}
-                                                        className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 transition"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleConvertToSale(l._id)}
-                                                        className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
-                                                    >
-                                                        Convert
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(l._id)}
-                                                        className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </td>
-                                            )}
+                                            <td className="p-2 space-x-2">
+                                                <button
+                                                    onClick={() => openEditModal(l)}
+                                                    className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 transition"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleConvertToSale(l._id)}
+                                                    className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                                                >
+                                                    Convert
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(l._id)}
+                                                    className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -318,17 +303,15 @@ export default function CSRDashboard() {
                 </div>
 
                 {/* Excel Upload */}
-                {role === "csr" && (
-                    <div className="mt-4">
-                        <label className="inline-block bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition">
-                            {uploading ? "Uploading..." : "Upload Excel"}
-                            <input type="file" hidden onChange={handleExcelUpload} />
-                        </label>
-                    </div>
-                )}
+                <div className="mt-4">
+                    <label className="inline-block bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition">
+                        {uploading ? "Uploading..." : "Upload Excel"}
+                        <input type="file" hidden onChange={handleExcelUpload} />
+                    </label>
+                </div>
 
                 {/* Lead Modal */}
-                {isModalOpen && role === "csr" && (
+                {isModalOpen && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
                         <div className="bg-white p-6 rounded shadow-lg w-96">
                             <h2 className="text-lg font-bold mb-4">

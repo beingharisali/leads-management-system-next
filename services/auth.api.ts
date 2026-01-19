@@ -14,12 +14,22 @@ export interface AuthResponse {
 
 // ===== FIRST ADMIN SIGNUP =====
 export const firstAdminSignup = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
-  return (await http.post("/auth/first-admin-signup", data)).data;
+  try {
+    const res = await http.post("/auth/first-admin-signup", data);
+    return res.data;
+  } catch (err: any) {
+    throw new Error(err.response?.data?.msg || "Admin signup failed");
+  }
 };
 
 // ===== LOGIN =====
 export const login = async (email: string, password: string): Promise<AuthResponse> => {
-  return (await http.post("/auth/login", { email, password })).data;
+  try {
+    const res = await http.post("/auth/login", { email, password });
+    return res.data;
+  } catch (err: any) {
+    throw new Error(err.response?.data?.msg || "Login failed");
+  }
 };
 
 // ===== CREATE CSR (Admin only) =====
@@ -27,9 +37,12 @@ export const createCSR = async (data: { name: string; email: string; password: s
   const token = localStorage.getItem("token"); // Admin token
   if (!token) throw new Error("Admin not authenticated");
 
-  return (
-    await http.post("/auth/register", data, {
+  try {
+    const res = await http.post("/auth/register", data, {
       headers: { Authorization: `Bearer ${token}` },
-    })
-  ).data;
+    });
+    return res.data;
+  } catch (err: any) {
+    throw new Error(err.response?.data?.msg || "CSR creation failed");
+  }
 };
