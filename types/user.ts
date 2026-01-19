@@ -9,8 +9,8 @@ export type UserRole =
 
 // ==================== User Interface ====================
 export interface User {
-  _id?: string;         // Backend MongoDB ID (optional)
-  id?: string;          // Frontend-consistent ID (optional)
+  _id?: string; // Backend MongoDB ID (optional)
+  id?: string; // Frontend-consistent ID (optional)
   name: string;
   email: string;
   role: UserRole;
