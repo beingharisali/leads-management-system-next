@@ -9,11 +9,17 @@ import {
     updateLead,
     deleteLead,
     uploadExcelLeads,
+    convertLeadToSale,
+    LeadPayload,
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
+import toast, { Toaster } from "react-hot-toast";
+import { getUserId } from "@/utils/decodeToken";
+
+/* ================= TYPES ================= */
 
 interface CSRPerformance {
     csrId: string;
@@ -42,23 +48,25 @@ interface StatsData {
     csrPerformance: CSRPerformance[];
 }
 
+/* ================= COMPONENT ================= */
+
 export default function AdminDashboardPage() {
     const [data, setData] = useState<StatsData | null>(null);
     const [leads, setLeads] = useState<Lead[]>([]);
+    const [sales, setSales] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<"day" | "week" | "month">("day");
+    const [uploading, setUploading] = useState(false);
 
-    // CSR Modal State
+    /* ================= CSR MODAL ================= */
     const [showCSRModal, setShowCSRModal] = useState(false);
     const [csrName, setCsrName] = useState("");
     const [csrEmail, setCsrEmail] = useState("");
     const [csrPassword, setCsrPassword] = useState("");
-    const [csrError, setCsrError] = useState("");
     const [csrLoading, setCsrLoading] = useState(false);
-    const [csrSuccess, setCsrSuccess] = useState("");
 
-    // Lead Modal State
+    /* ================= LEAD MODAL ================= */
     const [showLeadModal, setShowLeadModal] = useState(false);
     const [leadName, setLeadName] = useState("");
     const [leadPhone, setLeadPhone] = useState("");
@@ -66,40 +74,34 @@ export default function AdminDashboardPage() {
     const [assignedCSR, setAssignedCSR] = useState<string | null>(null);
     const [leadIdEditing, setLeadIdEditing] = useState<string | null>(null);
 
-    const [uploading, setUploading] = useState(false);
-
-    // ================= FETCH STATS & LEADS =================
+    /* ================= FETCH DATA ================= */
     const fetchStats = async () => {
         setLoading(true);
-        setError("");
         try {
             const [statsRes, leadsRes] = await Promise.all([
                 getAdminStats(filter),
                 getLeadsByRole("admin"),
             ]);
 
+            // Split leads into active and sales
+            const activeLeads = leadsRes.filter((l: Lead) => l.status !== "sale");
+            const convertedSales = leadsRes.filter((l: Lead) => l.status === "sale");
+
             setData({
                 totalLeads: statsRes.totalLeads || 0,
                 totalSales: statsRes.totalSales || 0,
                 totalCSRs: statsRes.totalCSRs || 0,
                 conversionRate: statsRes.conversionRate || "0%",
-                leadsStats: {
-                    day: statsRes.leadsStats?.day || 0,
-                    week: statsRes.leadsStats?.week || 0,
-                    month: statsRes.leadsStats?.month || 0,
-                },
-                salesStats: {
-                    day: statsRes.salesStats?.day || 0,
-                    week: statsRes.salesStats?.week || 0,
-                    month: statsRes.salesStats?.month || 0,
-                },
+                leadsStats: statsRes.leadsStats,
+                salesStats: statsRes.salesStats,
                 csrPerformance: statsRes.csrPerformance || [],
             });
 
-            setLeads(leadsRes || []);
+            setLeads(activeLeads || []);
+            setSales(convertedSales || []);
         } catch (err: any) {
             console.error(err);
-            setError("Failed to load admin dashboard stats");
+            setError("Failed to load dashboard");
         } finally {
             setLoading(false);
         }
@@ -109,75 +111,125 @@ export default function AdminDashboardPage() {
         fetchStats();
     }, [filter]);
 
-    // ================= CREATE CSR =================
+    const csrOptions = data?.csrPerformance || [];
+
+    /* ================= CREATE CSR ================= */
     const handleCreateCSR = async (e: React.FormEvent) => {
         e.preventDefault();
-        setCsrError("");
-        setCsrSuccess("");
+        if (!csrName || !csrEmail || !csrPassword) return toast.error("All fields required");
         setCsrLoading(true);
-
         try {
-            const res = await createCSR({ name: csrName, email: csrEmail, password: csrPassword });
-            setCsrSuccess(`CSR "${res.user.name}" created successfully!`);
-            setCsrName(""); setCsrEmail(""); setCsrPassword(""); setShowCSRModal(false);
-            await fetchStats();
+            await createCSR({ name: csrName, email: csrEmail, password: csrPassword });
+            toast.success("CSR created successfully");
+            setShowCSRModal(false);
+            setCsrName(""); setCsrEmail(""); setCsrPassword("");
+            fetchStats();
         } catch (err: any) {
-            setCsrError(err.response?.data?.msg || "Failed to create CSR");
+            console.error(err);
+            toast.error(err.response?.data?.msg || "CSR creation failed");
         } finally {
             setCsrLoading(false);
         }
     };
 
-    // ================= CREATE / UPDATE LEAD =================
+    /* ================= CREATE / UPDATE LEAD ================= */
     const handleLeadSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!leadName || !leadPhone || !leadCourse) return toast.error("All fields required");
+
+        const userId = await getUserId();
+        if (!userId) return toast.error("User not authenticated");
+
+        const payload: LeadPayload = {
+            name: leadName,
+            phone: leadPhone,
+            course: leadCourse,
+            assignedTo: assignedCSR || undefined,
+            createdBy: userId,
+        };
+
         try {
             if (leadIdEditing) {
-                await updateLead(leadIdEditing, {
-                    name: leadName,
-                    phone: leadPhone,
-                    course: leadCourse,
-                    assignedTo: assignedCSR || undefined,
-                });
+                await updateLead(leadIdEditing, payload);
+                setLeads(prev =>
+                    prev.map(l => (l._id === leadIdEditing ? { ...l, ...payload } : l))
+                );
+                toast.success("Lead updated successfully");
             } else {
-                await createLead({
-                    name: leadName,
-                    phone: leadPhone,
-                    course: leadCourse,
-                    assignedTo: assignedCSR || undefined,
-                });
+                const newLead = await createLead(payload);
+                setLeads(prev => [...prev, newLead]);
+                toast.success("Lead created successfully");
             }
+
             setShowLeadModal(false);
             setLeadIdEditing(null);
             setLeadName(""); setLeadPhone(""); setLeadCourse(""); setAssignedCSR(null);
-            fetchStats();
         } catch (err: any) {
-            alert(err.response?.data?.msg || "Failed to save lead");
+            console.error(err);
+            toast.error(err?.response?.data?.message || "Failed to save lead");
         }
     };
 
-    // ================= DELETE LEAD =================
+    /* ================= DELETE LEAD ================= */
     const handleDeleteLead = async (id: string) => {
         if (!confirm("Are you sure you want to delete this lead?")) return;
         try {
             await deleteLead(id);
-            fetchStats();
+            setLeads(prev => prev.filter(l => l._id !== id));
+            setSales(prev => prev.filter(l => l._id !== id));
+            toast.success("Lead deleted successfully");
         } catch (err: any) {
-            alert(err.response?.data?.msg || "Failed to delete lead");
+            console.error(err);
+            toast.error(err?.response?.data?.message || "Delete failed");
         }
     };
 
-    // ================= EXCEL UPLOAD =================
+    /* ================= CONVERT TO SALE ================= */
+    const handleConvertLeadToSale = async (leadId: string) => {
+        const amountStr = prompt("Enter sale amount:");
+        const amount = amountStr ? Number(amountStr) : 0;
+        if (!amount || amount <= 0) return toast.error("Invalid sale amount");
+
+        try {
+            await convertLeadToSale(leadId, amount);
+
+            // Move lead from leads to sales
+            setLeads(prev => prev.filter(l => l._id !== leadId));
+            const convertedLead = leads.find(l => l._id === leadId);
+            if (convertedLead) {
+                setSales(prev => [...prev, { ...convertedLead, status: "sale" }]);
+            }
+
+            // Update stats locally
+            setData(prev => prev ? {
+                ...prev,
+                totalSales: prev.totalSales + 1,
+                conversionRate: `${((prev.totalSales + 1) / prev.totalLeads * 100).toFixed(2)}%`,
+                salesStats: {
+                    day: prev.salesStats.day + 1,
+                    week: prev.salesStats.week + 1,
+                    month: prev.salesStats.month + 1,
+                },
+            } : prev);
+
+            toast.success("Lead converted to sale successfully");
+        } catch (err: any) {
+            console.error(err);
+            toast.error(err?.response?.data?.message || "Conversion failed");
+        }
+    };
+
+    /* ================= EXCEL UPLOAD ================= */
     const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.length) return;
-        const file = e.target.files[0];
         setUploading(true);
         try {
-            await uploadExcelLeads(file);
-            alert("✅ Excel uploaded successfully");
+            await uploadExcelLeads(e.target.files[0]);
+            toast.success("Excel uploaded successfully");
             fetchStats();
         } catch (err: any) {
-            alert(err.response?.data?.msg || "❌ Failed to upload Excel");
+            console.error(err);
+            toast.error(err?.response?.data?.message || "Excel upload failed");
         } finally {
             setUploading(false);
             e.target.value = "";
@@ -187,132 +239,190 @@ export default function AdminDashboardPage() {
     if (loading) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
 
-    // ================= JSX =================
     return (
-        <div className="space-y-6 p-6">
-            {/* HEADER + CREATE CSR */}
+        <div className="p-6 space-y-6">
+            <Toaster position="top-right" reverseOrder={false} />
+
+            {/* HEADER */}
             <div className="flex justify-between items-center mb-4">
-                <h1 className="text-xl font-bold">Admin Dashboard</h1>
-                <button onClick={() => setShowCSRModal(true)} className="bg-green-600 text-white px-4 py-2 rounded">
-                    + Create CSR
-                </button>
-            </div>
-
-            {/* CSR MODAL */}
-            {showCSRModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                    <div className="bg-white p-6 rounded shadow w-96 relative">
-                        <h2 className="text-lg font-semibold mb-4">Create New CSR</h2>
-                        <form onSubmit={handleCreateCSR} className="flex flex-col gap-3">
-                            <input placeholder="Name" value={csrName} onChange={e => setCsrName(e.target.value)} required className="border p-2 rounded" />
-                            <input type="email" placeholder="Email" value={csrEmail} onChange={e => setCsrEmail(e.target.value)} required className="border p-2 rounded" />
-                            <input type="password" placeholder="Password" value={csrPassword} onChange={e => setCsrPassword(e.target.value)} required className="border p-2 rounded" />
-                            <button type="submit" disabled={csrLoading} className="bg-blue-600 text-white py-2 rounded mt-2">
-                                {csrLoading ? "Creating..." : "Create CSR"}
-                            </button>
-                            {csrError && <p className="text-red-500 text-sm">{csrError}</p>}
-                            {csrSuccess && <p className="text-green-500 text-sm">{csrSuccess}</p>}
-                        </form>
-                        <button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700" onClick={() => setShowCSRModal(false)}>✖</button>
-                    </div>
+                <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+                <div className="flex space-x-2">
+                    <button
+                        onClick={() => setShowCSRModal(true)}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition"
+                    >
+                        + Create CSR
+                    </button>
+                    <label className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded cursor-pointer transition">
+                        {uploading ? "Uploading..." : "Upload Excel"}
+                        <input type="file" hidden onChange={handleExcelUpload} />
+                    </label>
                 </div>
-            )}
-
-            {/* CREATE LEAD + UPLOAD */}
-            <div className="flex space-x-4 mb-4">
-                <button onClick={() => setShowLeadModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">+ Create Lead</button>
-                <label className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer">
-                    {uploading ? "Uploading..." : "Upload Excel Leads"}
-                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelUpload} disabled={uploading} />
-                </label>
             </div>
 
-            {/* LEADS TABLE */}
-            <div className="bg-white p-4 rounded shadow">
-                <h2 className="text-lg font-semibold mb-4">All Leads</h2>
-                {leads.length ? (
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b">
-                                <th className="text-left p-2">Name</th>
-                                <th className="text-left p-2">Course</th>
-                                <th className="text-left p-2">Phone</th>
-                                <th className="text-left p-2">Status</th>
-                                <th className="text-left p-2">Assigned CSR</th>
-                                <th className="text-left p-2">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {leads.map((lead) => (
-                                <tr key={lead._id} className="border-b">
-                                    <td className="p-2">{lead.name}</td>
-                                    <td className="p-2">{lead.course}</td>
-                                    <td className="p-2">{lead.phone}</td>
-                                    <td className="p-2">{lead.status || "Pending"}</td>
-                                    <td className="p-2">{lead.assignedTo?.name || "-"}</td>
-                                    <td className="p-2 flex space-x-2">
-                                        <button onClick={() => {
-                                            setShowLeadModal(true);
-                                            setLeadIdEditing(lead._id);
-                                            setLeadName(lead.name);
-                                            setLeadPhone(lead.phone);
-                                            setLeadCourse(lead.course);
-                                            setAssignedCSR(lead.assignedTo?._id || null);
-                                        }} className="bg-yellow-500 text-white px-2 py-1 rounded">Edit</button>
-                                        <button onClick={() => handleDeleteLead(lead._id)} className="bg-red-600 text-white px-2 py-1 rounded">Delete</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                ) : <p className="text-gray-500">No leads available</p>}
-            </div>
-
-            {/* FILTER & SUMMARY CARDS */}
-            <div className="flex items-center space-x-4 mb-4">
-                <label className="font-semibold">Select Time Filter:</label>
-                <select value={filter} onChange={(e) => setFilter(e.target.value as "day" | "week" | "month")} className="border rounded px-2 py-1">
+            {/* FILTER */}
+            <div className="mb-4">
+                <select
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value as "day" | "week" | "month")}
+                    className="border p-2 rounded"
+                >
                     <option value="day">Day</option>
                     <option value="week">Week</option>
                     <option value="month">Month</option>
                 </select>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* CREATE LEAD */}
+            <button
+                onClick={() => setShowLeadModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded mb-4 transition"
+            >
+                + Create Lead
+            </button>
+
+            {/* LEAD MODAL */}
+            {showLeadModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+                    <div className="bg-white p-6 rounded w-96 shadow-lg">
+                        <form onSubmit={handleLeadSubmit} className="space-y-3">
+                            <input
+                                value={leadName}
+                                onChange={e => setLeadName(e.target.value)}
+                                placeholder="Name"
+                                required
+                                className="border p-2 w-full rounded"
+                            />
+                            <input
+                                value={leadPhone}
+                                onChange={e => setLeadPhone(e.target.value)}
+                                placeholder="Phone"
+                                required
+                                className="border p-2 w-full rounded"
+                            />
+                            <input
+                                value={leadCourse}
+                                onChange={e => setLeadCourse(e.target.value)}
+                                placeholder="Course"
+                                required
+                                className="border p-2 w-full rounded"
+                            />
+                            <select
+                                value={assignedCSR || ""}
+                                onChange={e => setAssignedCSR(e.target.value)}
+                                className="border p-2 w-full rounded"
+                            >
+                                <option value="">Assign CSR</option>
+                                {csrOptions.map(csr => (
+                                    <option key={csr.csrId} value={csr.csrId}>{csr.name}</option>
+                                ))}
+                            </select>
+
+                            <button
+                                type="submit"
+                                className="bg-blue-600 hover:bg-blue-700 text-white py-2 w-full rounded transition"
+                            >
+                                {leadIdEditing ? "Update Lead" : "Create Lead"}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* LEADS TABLE */}
+            <div className="bg-white p-4 rounded shadow overflow-x-auto">
+                <h2 className="font-semibold mb-2">Active Leads</h2>
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="border-b">
+                            <th className="p-2">Name</th>
+                            <th className="p-2">Phone</th>
+                            <th className="p-2">Course</th>
+                            <th className="p-2">CSR</th>
+                            <th className="p-2">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {leads.map(l => (
+                            <tr key={l._id} className="border-b hover:bg-gray-50">
+                                <td className="p-2">{l.name}</td>
+                                <td className="p-2">{l.phone}</td>
+                                <td className="p-2">{l.course}</td>
+                                <td className="p-2">{l.assignedTo?.name || "-"}</td>
+                                <td className="p-2 space-x-2">
+                                    <button
+                                        onClick={() => {
+                                            setShowLeadModal(true);
+                                            setLeadIdEditing(l._id);
+                                            setLeadName(l.name);
+                                            setLeadPhone(l.phone);
+                                            setLeadCourse(l.course);
+                                            setAssignedCSR(l.assignedTo?._id || null);
+                                        }}
+                                        className="text-blue-600 hover:underline"
+                                    >
+                                        Edit
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteLead(l._id)}
+                                        className="text-red-600 hover:underline"
+                                    >
+                                        Delete
+                                    </button>
+                                    <button
+                                        onClick={() => handleConvertLeadToSale(l._id)}
+                                        className="text-green-600 hover:underline"
+                                    >
+                                        Convert
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* SALES TABLE */}
+            {sales.length > 0 && (
+                <div className="bg-white p-4 rounded shadow overflow-x-auto mt-6">
+                    <h2 className="font-semibold mb-2">Converted Sales</h2>
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="border-b">
+                                <th className="p-2">Name</th>
+                                <th className="p-2">Phone</th>
+                                <th className="p-2">Course</th>
+                                <th className="p-2">CSR</th>
+                                <th className="p-2">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sales.map(l => (
+                                <tr key={l._id} className="border-b hover:bg-gray-50">
+                                    <td className="p-2">{l.name}</td>
+                                    <td className="p-2">{l.phone}</td>
+                                    <td className="p-2">{l.course}</td>
+                                    <td className="p-2">{l.assignedTo?.name || "-"}</td>
+                                    <td className="p-2 text-green-600 font-semibold">Sale</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* SUMMARY CARDS */}
+            <div className="grid grid-cols-4 gap-4 mt-4">
                 <SummaryCard title="Total Leads" value={data?.totalLeads || 0} />
                 <SummaryCard title="Total Sales" value={data?.totalSales || 0} />
                 <SummaryCard title="Total CSRs" value={data?.totalCSRs || 0} />
                 <SummaryCard title="Conversion Rate" value={data?.conversionRate || "0%"} />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <CSRStatsChart title="Leads Analytics" day={data?.leadsStats?.day || 0} week={data?.leadsStats?.week || 0} month={data?.leadsStats?.month || 0} />
-                <CSRStatsChart title="Sales Analytics" day={data?.salesStats?.day || 0} week={data?.salesStats?.week || 0} month={data?.salesStats?.month || 0} />
-            </div>
-
-            {/* CSR PERFORMANCE TABLE */}
-            <div className="bg-white p-4 rounded shadow">
-                <h2 className="text-lg font-semibold mb-4">CSR Performance</h2>
-                <table className="w-full text-sm">
-                    <thead>
-                        <tr className="border-b">
-                            <th className="text-left p-2">CSR Name</th>
-                            <th className="text-left p-2">Leads</th>
-                            <th className="text-left p-2">Sales</th>
-                            <th className="text-left p-2">Conversion</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {data?.csrPerformance.length ? data.csrPerformance.map(csr => (
-                            <tr key={csr.csrId} className="border-b">
-                                <td className="p-2">{csr.name}</td>
-                                <td className="p-2">{csr.totalLeads}</td>
-                                <td className="p-2">{csr.totalSales}</td>
-                                <td className="p-2">{csr.conversionRate}</td>
-                            </tr>
-                        )) : <tr><td colSpan={4} className="text-center p-4 text-gray-500">No CSR data available</td></tr>}
-                    </tbody>
-                </table>
+            {/* CHARTS */}
+            <div className="grid grid-cols-2 gap-6 mt-6">
+                <CSRStatsChart title="Leads" {...data!.leadsStats} />
+                <CSRStatsChart title="Sales" {...data!.salesStats} />
             </div>
         </div>
     );
