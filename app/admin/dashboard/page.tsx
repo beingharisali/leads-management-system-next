@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { getAdminStats } from "@/services/dashboard.api";
 import { createCSR } from "@/services/auth.api";
+import CSRSidebar from "../../../components/CsrSidebar";
+import CSRLeadsPanel from "../../../components/CsrLeadPanel";
+
 import {
     getLeadsByRole,
     createLead,
@@ -73,6 +76,8 @@ export default function AdminDashboardPage() {
     const [leadCourse, setLeadCourse] = useState("");
     const [assignedCSR, setAssignedCSR] = useState<string | null>(null);
     const [leadIdEditing, setLeadIdEditing] = useState<string | null>(null);
+    const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
+
 
     /* ================= FETCH DATA ================= */
     const fetchStats = async () => {
@@ -343,6 +348,26 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
+            <div className="grid grid-cols-12 gap-6 mt-6">
+
+                <div className="col-span-3">
+                    <CSRSidebar
+                        csrs={data?.csrPerformance || []}
+                        selectedCSR={selectedCSR}
+                        onSelect={setSelectedCSR}
+                    />
+                </div>
+
+                <div className="col-span-9">
+                    <CSRLeadsPanel
+                        leads={leads}
+                        selectedCSR={selectedCSR}
+                        onConvertToSale={handleConvertLeadToSale}
+                        onDeleteLead={handleDeleteLead}
+                    />
+                </div>
+
+            </div>
 
             {/* SUMMARY CARDS */}
             <div className="grid grid-cols-4 gap-4 mt-4">
@@ -358,5 +383,9 @@ export default function AdminDashboardPage() {
                 <CSRStatsChart title="Sales" {...data!.salesStats} />
             </div>
         </div >
+
+
+
     );
+
 }

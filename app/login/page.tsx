@@ -20,7 +20,7 @@ export default function LoginPage() {
             const res = await http.post("/auth/login", { email, password });
             const { token, user } = res.data;
 
-            // 🔹 Store full user object
+            // Store auth data
             localStorage.setItem("token", token);
             localStorage.setItem("user", JSON.stringify(user));
             localStorage.setItem("userId", user._id);
@@ -41,6 +41,7 @@ export default function LoginPage() {
             className="p-6 flex flex-col gap-3 max-w-sm mx-auto mt-20 border rounded shadow"
         >
             <h1 className="text-2xl font-bold text-center mb-4">Login</h1>
+
             <input
                 placeholder="Email"
                 value={email}
@@ -48,6 +49,7 @@ export default function LoginPage() {
                 required
                 className="border p-3 rounded"
             />
+
             <input
                 type="password"
                 placeholder="Password"
@@ -56,6 +58,7 @@ export default function LoginPage() {
                 required
                 className="border p-3 rounded"
             />
+
             <button
                 type="submit"
                 disabled={loading}
@@ -63,7 +66,21 @@ export default function LoginPage() {
             >
                 {loading ? "Logging in..." : "Login"}
             </button>
-            {error && <p className="text-red-500 text-center mt-2">{error}</p>}
+
+            {error && (
+                <p className="text-red-500 text-center mt-2">{error}</p>
+            )}
+
+            {/* SIGNUP LINK */}
+            <p className="text-center mt-4 text-sm">
+                Don’t have an account?{" "}
+                <span
+                    onClick={() => router.push("/signup")}
+                    className="text-purple-600 font-semibold cursor-pointer hover:underline"
+                >
+                    Sign up
+                </span>
+            </p>
         </form>
     );
 }
