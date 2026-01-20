@@ -9,7 +9,6 @@ import {
     convertLeadToSale,
     createLead,
     updateLead,
-    LeadPayload,
 } from "@/services/lead.api";
 import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
@@ -19,62 +18,51 @@ import ErrorMessage from "@/components/ErrorMessage";
 import { getUserRole, getUserId, logout, getToken } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
 import * as XLSX from "xlsx";
+import { FiUpload, FiPlus, FiLogOut, FiEdit2, FiTrash2, FiCheckCircle, FiPhone, FiBookOpen, FiUser } from "react-icons/fi";
 
 type Filter = "day" | "week" | "month";
 
-interface Stats {
-    totalLeads: number;
-    totalSales: number;
-    conversionRate: string;
-    leadsStats: { day: number; week: number; month: number };
-    salesStats: { day: number; week: number; month: number };
-}
-
+// Interface ko exact schema ke mutabiq rakha hai
 interface Lead {
     _id: string;
     name: string;
     course: string;
     phone: string;
-    status?: string;
-    assignedTo?: { _id: string; name: string } | null;
-}
-
-interface ExcelLead {
-    name: string;
-    course: string;
-    phone: string;
-    isValid: boolean;
+    status?: "new" | "contacted" | "converted";
+    createdBy?: string;
+    saleAmount?: number;
 }
 
 export default function CSRDashboard() {
     const router = useRouter();
+
     const [leads, setLeads] = useState<Lead[]>([]);
-    const [stats, setStats] = useState<Stats>({
+    const [stats, setStats] = useState({
         totalLeads: 0,
         totalSales: 0,
         conversionRate: "0%",
         leadsStats: { day: 0, week: 0, month: 0 },
         salesStats: { day: 0, week: 0, month: 0 },
     });
+
     const [filter, setFilter] = useState<Filter>("day");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [uploading, setUploading] = useState(false);
     const [csrId, setCsrId] = useState<string | null>(null);
 
-    const [excelLeads, setExcelLeads] = useState<ExcelLead[]>([]);
+    const [excelLeads, setExcelLeads] = useState<any[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingLead, setEditingLead] = useState<Lead | null>(null);
     const [leadForm, setLeadForm] = useState({ name: "", course: "", phone: "" });
 
-    // ================= FETCH DATA =================
     const fetchData = async () => {
         try {
             setLoading(true);
-            setError("");
             const role = await getUserRole();
             const userId = await getUserId();
-            if (!role || !userId) throw new Error("User not authenticated");
+            if (!role || !userId) throw new Error("Authentication failed");
+
             setCsrId(userId);
 
             const [leadsRes, statsRes] = await Promise.all([
@@ -82,7 +70,9 @@ export default function CSRDashboard() {
                 getCSRStats(filter),
             ]);
 
-            setLeads(leadsRes || []);
+            // RED LINE FIX: 'as Lead[]' use kiya hai taake TS ko pata chale ye array hi hai
+            setLeads((leadsRes as Lead[]) || []);
+
             setStats({
                 totalLeads: statsRes?.totalLeads ?? 0,
                 totalSales: statsRes?.totalSales ?? 0,
@@ -101,339 +91,234 @@ export default function CSRDashboard() {
         fetchData();
     }, [filter]);
 
-    // ================= DELETE / CONVERT =================
-    const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this lead?")) return;
-        try {
-            await deleteLead(id);
-            toast.success("Lead deleted successfully");
-            fetchData();
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Delete failed");
-        }
-    };
-
-    const handleConvertToSale = async (id: string) => {
-        const amountStr = prompt("Enter sale amount:");
-        const amount = amountStr ? Number(amountStr) : 0;
-        if (!amount || amount <= 0) return toast.error("Invalid sale amount");
-
-        try {
-            await convertLeadToSale(id, amount);
-            toast.success("Lead converted to sale");
-            fetchData();
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Convert to sale failed");
-        }
-    };
-
-    // ================= EXCEL UPLOAD =================
+    // ================= EXCEL HANDLING =================
     const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files?.length) return;
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-        try {
-            const data = await e.target.files[0].arrayBuffer();
-            const workbook = XLSX.read(data);
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
+        setUploading(true);
+        const reader = new FileReader();
 
-            // Parse Excel safely
-            const parsed: ExcelLead[] = jsonData.map((row) => {
-                const name = (row.Name || row.name || "").toString().trim();
-                const course = (row.Course || row.course || "").toString().trim();
-                const phone = (row.Phone || row.phone || "").toString().trim();
+        reader.onload = async (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: "array" });
+                const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
-                return {
-                    name,
-                    course,
-                    phone,
-                    isValid: !!name && !!course && !!phone,
-                };
-            });
+                const activeId = csrId || await getUserId();
 
-            const validLeads = parsed.filter((l) => l.isValid);
-            console.log("Valid Leads:", validLeads);
-            setExcelLeads(validLeads);
+                const parsed = rows.map((row) => {
+                    const name = (row.Name || row.name || row.Customer || "").toString().trim();
+                    const phone = (row.Phone || row.phone || row.Mobile || "").toString().trim().replace(/\s/g, "");
+                    const course = (row.Course || row.course || "Not Specified").toString().trim();
 
-            if (!validLeads.length) toast.error("No valid leads found in Excel");
-            else toast.success(`${validLeads.length} leads ready to upload`);
-        } catch (err: any) {
-            console.error(err);
-            toast.error("Failed to read Excel file");
-        }
+                    return {
+                        name,
+                        phone,
+                        course,
+                        status: "new",
+                        source: "excel",
+                        createdBy: activeId,
+                        assignedTo: activeId,
+                        saleAmount: 0
+                    };
+                }).filter(l => l.name.length >= 3 && l.phone.length >= 11);
+
+                if (parsed.length === 0) {
+                    toast.error("No valid leads. Name 3+ & Phone 11+ required.");
+                } else {
+                    setExcelLeads(parsed);
+                    toast.success(`${parsed.length} leads loaded.`);
+                }
+            } catch (err) {
+                toast.error("Excel format error.");
+            } finally {
+                setUploading(false);
+                e.target.value = "";
+            }
+        };
+        reader.readAsArrayBuffer(file);
     };
 
     const handleExcelSubmit = async () => {
-        if (!csrId || !excelLeads.length) return toast.error("No leads to upload");
-        console.log("CSR ID:", csrId)
+        if (!excelLeads.length || uploading) return;
         try {
             setUploading(true);
-
-            const token = getToken();
-            if (!token) throw new Error("Token not found");
-
-            // Backend expects JSON with csrId & leads array
+            const activeId = csrId || await getUserId();
             const res = await fetch("http://localhost:5000/api/v1/lead/upload-excel-array", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
+                    Authorization: `Bearer ${getToken()}`
                 },
-                body: JSON.stringify({
-                    csrId,
-                    leads: excelLeads.map((l) => ({
-                        name: l.name,
-                        course: l.course,
-                        phone: l.phone,
-                    })),
-                }),
+                body: JSON.stringify({ csrId: activeId, leads: excelLeads }),
             });
-
-            if (!res.ok) {
-                const errData = await res.text();
-                throw new Error(`Upload failed: ${res.status} ${errData}`);
-            }
-
-            toast.success("Excel uploaded successfully");
+            if (!res.ok) throw new Error("Upload failed");
+            toast.success("Import Successful!");
             setExcelLeads([]);
             fetchData();
         } catch (err: any) {
-            console.error(err);
-            toast.error(err?.message || "Excel upload failed");
+            toast.error(err.message || "Server Error");
         } finally {
             setUploading(false);
         }
     };
 
-    // ================= LEAD FORM =================
-    const openCreateModal = () => {
-        setEditingLead(null);
-        setLeadForm({ name: "", course: "", phone: "" });
-        setIsModalOpen(true);
+    // ================= CRUD ACTIONS =================
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure?")) return;
+        try {
+            await deleteLead(id);
+            toast.success("Lead removed");
+            fetchData();
+        } catch (err) { toast.error("Delete failed"); }
     };
 
-    const openEditModal = (lead: Lead) => {
-        setEditingLead(lead);
-        setLeadForm({ name: lead.name, course: lead.course, phone: lead.phone });
-        setIsModalOpen(true);
-    };
-
-    const handleLeadFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setLeadForm({ ...leadForm, [e.target.name]: e.target.value });
+    const handleConvertToSale = async (id: string) => {
+        const amount = prompt("Enter Sale Amount:");
+        if (!amount || isNaN(Number(amount))) return toast.error("Valid amount required");
+        try {
+            await convertLeadToSale(id, Number(amount));
+            toast.success("Lead Converted! 🚀");
+            fetchData();
+        } catch (err) { toast.error("Conversion failed"); }
     };
 
     const handleLeadFormSubmit = async () => {
-        if (!csrId) return toast.error("CSR ID not found");
-        if (!leadForm.name || !leadForm.course || !leadForm.phone)
-            return toast.error("Please fill all fields");
-
+        if (leadForm.name.length < 3) return toast.error("Name min 3 characters");
+        if (leadForm.phone.length < 11) return toast.error("Phone min 11 digits");
         try {
-            const payload: LeadPayload = {
-                name: leadForm.name,
-                course: leadForm.course,
-                phone: leadForm.phone,
-                assignedTo: csrId,
-                status: editingLead?.status || "new",
-            };
-
-            if (editingLead) await updateLead(editingLead._id, payload);
-            else await createLead(payload);
-
-            toast.success(editingLead ? "Lead updated successfully" : "Lead created successfully");
+            const activeId = csrId || await getUserId();
+            const payload = { ...leadForm, assignedTo: activeId, createdBy: activeId, source: "manual" };
+            editingLead ? await updateLead(editingLead._id, payload as any) : await createLead(payload as any);
+            toast.success("Saved");
             setIsModalOpen(false);
             fetchData();
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.message || "Failed to save lead");
-        }
+        } catch (err) { toast.error("Save failed"); }
     };
 
-    const handleLogout = () => {
-        logout();
-        router.push("/login");
-    };
+    const handleLogout = () => { logout(); router.push("/login"); };
 
     if (loading) return <Loading />;
-    if (error) return <ErrorMessage message={error} />;
 
     return (
         <ProtectedRoute role="csr">
-            <Toaster position="top-right" reverseOrder={false} />
-            <div className="p-6 space-y-6">
+            <Toaster position="top-right" />
+            <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
                 {/* Header */}
-                <div className="flex justify-between items-center">
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold">CSR Dashboard</h1>
-                        <p className="text-gray-500 mt-1">CSR ID: {csrId}</p>
+                        <h1 className="text-4xl font-black text-slate-800">CSR Dashboard</h1>
+                        <p className="text-slate-500 font-medium">Manage leads and tracking</p>
                     </div>
-                    <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
-                    >
-                        Logout
+                    <button onClick={handleLogout} className="flex items-center gap-2 bg-white border border-slate-200 px-6 py-2.5 rounded-2xl hover:text-red-600 transition-all font-bold shadow-sm">
+                        <FiLogOut /> Logout
                     </button>
                 </div>
 
-                {/* Filters & Create / Upload */}
-                <div className="flex justify-between items-center mt-4">
-                    <select
-                        value={filter}
-                        onChange={(e) => setFilter(e.target.value as Filter)}
-                        className="border p-2 rounded"
-                    >
-                        <option value="day">Day</option>
-                        <option value="week">Week</option>
-                        <option value="month">Month</option>
-                    </select>
-
-                    <div className="flex gap-2">
-                        <button
-                            type="button"
-                            onClick={openCreateModal}
-                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                        >
-                            + Create Lead
-                        </button>
-
-                        <div className="flex gap-2">
-                            <label className="bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition">
-                                {uploading ? "Uploading..." : "Upload Excel"}
-                                <input type="file" hidden onChange={handleExcelUpload} />
-                            </label>
-
-                            {excelLeads.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={handleExcelSubmit}
-                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition"
-                                >
-                                    Submit Excel
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
                 {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                    <SummaryCard title="Total Leads" value={stats.totalLeads} />
+                <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                    <SummaryCard title="Assigned Leads" value={stats.totalLeads} />
                     <SummaryCard title="Total Sales" value={stats.totalSales} />
                     <SummaryCard title="Conversion Rate" value={stats.conversionRate} />
                 </div>
 
-                {/* Leads Table */}
-                <div className="mt-6 overflow-x-auto">
-                    <table className="min-w-full border">
-                        <thead>
-                            <tr className="bg-gray-200">
-                                <th className="p-2 border">Name</th>
-                                <th className="p-2 border">Course</th>
-                                <th className="p-2 border">Phone</th>
-                                <th className="p-2 border">Status</th>
-                                <th className="p-2 border">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {leads.map((lead) => (
-                                <tr key={lead._id} className="text-center">
-                                    <td className="p-2 border">{lead.name}</td>
-                                    <td className="p-2 border">{lead.course}</td>
-                                    <td className="p-2 border">{lead.phone}</td>
-                                    <td className="p-2 border">{lead.status}</td>
-                                    <td className="p-2 border flex justify-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => openEditModal(lead)}
-                                            className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 transition"
-                                        >
-                                            Edit
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDelete(lead._id)}
-                                            className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
-                                        >
-                                            Delete
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleConvertToSale(lead._id)}
-                                            className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
-                                        >
-                                            Convert
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                {/* Action Bar */}
+                <div className="max-w-7xl mx-auto bg-white p-5 rounded-[2rem] shadow-sm border flex flex-wrap justify-between items-center gap-4 mb-10">
+                    <div className="flex bg-slate-100 p-1 rounded-2xl">
+                        {["day", "week", "month"].map((f) => (
+                            <button key={f} onClick={() => setFilter(f as Filter)} className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${filter === f ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}>
+                                {f.toUpperCase()}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button onClick={() => { setEditingLead(null); setLeadForm({ name: "", course: "", phone: "" }); setIsModalOpen(true); }} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-slate-200">
+                            <FiPlus /> New Lead
+                        </button>
+                        <label className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-2xl cursor-pointer font-bold shadow-lg shadow-blue-100">
+                            <FiUpload /> {uploading ? "Wait..." : "Import Excel"}
+                            <input type="file" hidden onChange={handleExcelUpload} accept=".xlsx, .xls" />
+                        </label>
+                        {excelLeads.length > 0 && (
+                            <button onClick={handleExcelSubmit} className="flex items-center gap-2 bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold animate-pulse shadow-lg">
+                                <FiCheckCircle /> Confirm {excelLeads.length}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                {/* CSR Stats Chart */}
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <CSRStatsChart
-                        title="Leads"
-                        day={stats.leadsStats.day}
-                        week={stats.leadsStats.week}
-                        month={stats.leadsStats.month}
-                    />
-                    <CSRStatsChart
-                        title="Sales"
-                        day={stats.salesStats.day}
-                        week={stats.salesStats.week}
-                        month={stats.salesStats.month}
-                    />
+                {/* Table */}
+                <div className="max-w-7xl mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden mb-10">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50/50 border-b">
+                                <tr className="text-slate-400 uppercase text-[11px] font-black tracking-widest">
+                                    <th className="px-8 py-5">Name</th>
+                                    <th className="px-8 py-5">Course</th>
+                                    <th className="px-8 py-5">Phone</th>
+                                    <th className="px-8 py-5">Status</th>
+                                    <th className="px-8 py-5 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {leads.map((lead) => (
+                                    <tr key={lead._id} className="group hover:bg-slate-50/50">
+                                        <td className="px-8 py-5 font-bold text-slate-700">{lead.name}</td>
+                                        <td className="px-8 py-5 text-slate-500">{lead.course}</td>
+                                        <td className="px-8 py-5 font-mono text-sm">{lead.phone}</td>
+                                        <td className="px-8 py-5">
+                                            <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase ${lead.status === 'converted' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                {lead.status || 'new'}
+                                            </span>
+                                        </td>
+                                        <td className="px-8 py-5 text-right">
+                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => { setEditingLead(lead); setLeadForm({ name: lead.name, course: lead.course, phone: lead.phone }); setIsModalOpen(true); }} className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg"><FiEdit2 /></button>
+                                                <button onClick={() => handleConvertToSale(lead._id)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg"><FiCheckCircle /></button>
+                                                <button onClick={() => handleDelete(lead._id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"><FiTrash2 /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Charts */}
+                <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                        <CSRStatsChart title="Leads Overview" day={stats.leadsStats.day} week={stats.leadsStats.week} month={stats.leadsStats.month} />
+                    </div>
+                    <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                        <CSRStatsChart title="Sales Overview" day={stats.salesStats.day} week={stats.salesStats.week} month={stats.salesStats.month} />
+                    </div>
                 </div>
 
                 {/* Modal */}
                 {isModalOpen && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white p-6 rounded-lg w-96">
-                            <h2 className="text-xl font-bold mb-4">
-                                {editingLead ? "Edit Lead" : "Create Lead"}
-                            </h2>
-                            <input
-                                type="text"
-                                name="name"
-                                value={leadForm.name}
-                                onChange={handleLeadFormChange}
-                                placeholder="Name"
-                                className="w-full mb-3 p-2 border rounded"
-                            />
-                            <input
-                                type="text"
-                                name="course"
-                                value={leadForm.course}
-                                onChange={handleLeadFormChange}
-                                placeholder="Course"
-                                className="w-full mb-3 p-2 border rounded"
-                            />
-                            <input
-                                type="text"
-                                name="phone"
-                                value={leadForm.phone}
-                                onChange={handleLeadFormChange}
-                                placeholder="Phone"
-                                className="w-full mb-3 p-2 border rounded"
-                            />
-                            <div className="flex justify-end gap-2 mt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsModalOpen(false)}
-                                    className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500 transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleLeadFormSubmit}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-                                >
-                                    {editingLead ? "Update" : "Create"}
-                                </button>
+                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex justify-center items-center z-50 p-6">
+                        <div className="bg-white rounded-[3rem] p-10 w-full max-w-lg shadow-2xl">
+                            <h2 className="text-3xl font-black mb-8">{editingLead ? "Update Lead" : "New Prospect"}</h2>
+                            <div className="space-y-6">
+                                <div className="relative">
+                                    <FiUser className="absolute left-4 top-4 text-slate-400" />
+                                    <input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} className="w-full bg-slate-50 pl-12 pr-4 py-4 rounded-2xl outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Full Name" />
+                                </div>
+                                <div className="relative">
+                                    <FiBookOpen className="absolute left-4 top-4 text-slate-400" />
+                                    <input value={leadForm.course} onChange={(e) => setLeadForm({ ...leadForm, course: e.target.value })} className="w-full bg-slate-50 pl-12 pr-4 py-4 rounded-2xl outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Course Name" />
+                                </div>
+                                <div className="relative">
+                                    <FiPhone className="absolute left-4 top-4 text-slate-400" />
+                                    <input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} className="w-full bg-slate-50 pl-12 pr-4 py-4 rounded-2xl outline-none font-bold focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" placeholder="Phone (11 digits)" />
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-4 mt-10">
+                                <button onClick={() => setIsModalOpen(false)} className="px-8 py-4 text-slate-400 font-bold">Cancel</button>
+                                <button onClick={handleLeadFormSubmit} className="px-10 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl">Save</button>
                             </div>
                         </div>
                     </div>

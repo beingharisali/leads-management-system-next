@@ -3,15 +3,16 @@
 import { useState, useEffect } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { uploadExcelLeads, getLeadsByRole, Lead } from "@/services/lead.api"; // ✅ Lead type import
+import { uploadExcelLeads, getLeadsByRole, Lead } from "@/services/lead.api";
 import { getUserRole, getUserId } from "@/utils/decodeToken";
+import toast, { Toaster } from "react-hot-toast";
 
 export default function UploadLeadsPage() {
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
     const [messageType, setMessageType] = useState<"success" | "error">("success");
-    const [leads, setLeads] = useState<Lead[]>([]); // ✅ typed array
+    const [leads, setLeads] = useState<Lead[]>([]);
     const [role, setRole] = useState<string | null>(null);
     const [userId, setUserId] = useState<string | null>(null);
 
@@ -32,15 +33,9 @@ export default function UploadLeadsPage() {
             return;
         }
 
-        if (!role) {
+        if (!role || !userId) {
             setMessageType("error");
-            setMessage("❌ User role not found");
-            return;
-        }
-
-        if (!userId) {
-            setMessageType("error");
-            setMessage("❌ User ID not found");
+            setMessage("❌ Authentication failed. Please log in again.");
             return;
         }
 
@@ -48,64 +43,88 @@ export default function UploadLeadsPage() {
         setMessage("");
 
         try {
-            // Upload Excel
-            await uploadExcelLeads(file);
+            // ✅ FIX: Passed both 'file' and 'userId' to satisfy the 2-argument requirement
+            await uploadExcelLeads(file, userId);
+
             setMessageType("success");
             setMessage("✅ Excel uploaded successfully");
+            toast.success("Leads imported!");
 
-            // Refresh CSR leads (TypeScript-safe)
+            // Refresh Leads list
             if (role === "csr") {
-                const refreshedLeads: Lead[] = await getLeadsByRole(role, userId || undefined);
-                setLeads(refreshedLeads ?? []);
+                const refreshedLeads = await getLeadsByRole(role, userId);
+                setLeads((refreshedLeads as Lead[]) ?? []);
             }
         } catch (err: any) {
             console.error(err);
             setMessageType("error");
-            setMessage(err?.message || "❌ Failed to upload Excel");
+            setMessage(err?.response?.data?.message || err?.message || "❌ Failed to upload Excel");
+            toast.error("Upload failed");
         } finally {
             setLoading(false);
-            setFile(null); // reset file input
+            setFile(null);
+            // Reset file input value manually if needed
+            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+            if (fileInput) fileInput.value = "";
         }
     };
 
     return (
         <ProtectedRoute role="csr">
             <RoleGuard allowedRole="csr">
-                <div className="max-w-xl mx-auto mt-10 bg-white p-6 shadow rounded space-y-4">
-                    <h1 className="text-2xl font-bold">Upload Excel Leads</h1>
+                <Toaster position="top-right" />
+                <div className="max-w-xl mx-auto mt-10 bg-white p-8 shadow-xl rounded-[2rem] space-y-6 border border-slate-100">
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-800">Upload Leads</h1>
+                        <p className="text-slate-500">Select an Excel file (.xlsx) to import leads</p>
+                    </div>
 
                     {message && (
-                        <p className={`text-sm ${messageType === "success" ? "text-green-600" : "text-red-600"}`}>
+                        <div className={`p-4 rounded-xl text-sm font-bold ${messageType === "success" ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}`}>
                             {message}
-                        </p>
+                        </div>
                     )}
 
-                    <input
-                        type="file"
-                        accept=".xlsx, .xls"
-                        onChange={(e) => e.target.files && setFile(e.target.files[0])}
-                        className="border p-2 rounded w-full"
-                    />
+                    <div className="space-y-4">
+                        <input
+                            type="file"
+                            accept=".xlsx, .xls"
+                            onChange={(e) => e.target.files && setFile(e.target.files[0])}
+                            className="block w-full text-sm text-slate-500
+                                file:mr-4 file:py-3 file:px-6
+                                file:rounded-xl file:border-0
+                                file:text-sm file:font-bold
+                                file:bg-blue-50 file:text-blue-700
+                                hover:file:bg-blue-100 transition-all cursor-pointer border-2 border-dashed border-slate-200 p-4 rounded-2xl"
+                        />
 
-                    <button
-                        onClick={handleUpload}
-                        disabled={loading}
-                        className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors"
-                    >
-                        {loading ? "Uploading..." : "Upload"}
-                    </button>
+                        <button
+                            onClick={handleUpload}
+                            disabled={loading || !file}
+                            className={`w-full py-4 px-4 rounded-2xl font-black transition-all shadow-lg ${loading || !file
+                                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                    : "bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200"
+                                }`}
+                        >
+                            {loading ? "Uploading Data..." : "Start Import"}
+                        </button>
+                    </div>
 
-                    {/* Display refreshed leads */}
+                    {/* Leads List Preview */}
                     {leads.length > 0 && (
-                        <div className="mt-6">
-                            <h2 className="font-semibold mb-2">Refreshed Leads:</h2>
-                            <ul className="list-disc pl-5">
-                                {leads.map((lead) => (
-                                    <li key={lead._id}>
-                                        {lead.name} - {lead.course} - {lead.phone}
-                                    </li>
+                        <div className="mt-8 border-t pt-6">
+                            <h2 className="font-black text-slate-700 mb-4 uppercase text-xs tracking-widest">Recently Added Leads</h2>
+                            <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                                {leads.slice(0, 10).map((lead) => (
+                                    <div key={lead._id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                        <div>
+                                            <p className="font-bold text-slate-800 text-sm">{lead.name}</p>
+                                            <p className="text-xs text-slate-500">{lead.course}</p>
+                                        </div>
+                                        <p className="text-xs font-mono font-bold text-blue-600">{lead.phone}</p>
+                                    </div>
                                 ))}
-                            </ul>
+                            </div>
                         </div>
                     )}
                 </div>

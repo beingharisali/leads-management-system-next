@@ -9,7 +9,7 @@ export interface LeadPayload {
     source?: string;
     assignedTo?: string; // CSR ID
     createdBy?: string;
-    status?: string; // optional status
+    status?: string;
 }
 
 export interface UpdateLeadPayload {
@@ -100,26 +100,19 @@ export const convertLeadToSale = async (id: string, amount: number): Promise<Lea
 /* ===================== EXCEL UPLOAD (CSR) ===================== */
 
 /**
- * Upload Excel leads for CSR
- * Backend expects payload:
- * {
- *   leads: [{name, phone, course}],
- *   assignedTo: "csrId"
- * }
+ * FIXED: Ab ye function File accept karega taake build error na aaye.
+ * Backend endpoint: /lead/upload-excel
  */
-export const uploadExcelLeads = async (leads: ExcelLead[], csrId: string): Promise<{ message: string }> => {
+export const uploadExcelLeads = async (file: File, csrId: string): Promise<{ message: string }> => {
     try {
-        // Filter out invalid leads (optional)
-        const validLeads = leads.filter(l => l.name && l.phone && l.course);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("csrId", csrId);
 
-        if (!validLeads.length) throw new Error("No valid leads to upload");
+        const res = await http.post<{ success: boolean; message: string }>("/lead/upload-excel", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+        });
 
-        const payload = {
-            leads: validLeads,
-            assignedTo: csrId,
-        };
-
-        const res = await http.post<{ success: boolean; message: string }>("/lead/upload-excel-array", payload);
         return res.data;
     } catch (err: any) {
         console.error("Excel upload error:", err);
@@ -129,7 +122,6 @@ export const uploadExcelLeads = async (leads: ExcelLead[], csrId: string): Promi
 
 /* ===================== BULK INSERT (ADMIN) ===================== */
 
-// Bulk insert (Admin) – still using file
 export const bulkInsertLeads = async (file: File): Promise<{ message: string }> => {
     try {
         const formData = new FormData();
