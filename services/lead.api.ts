@@ -1,24 +1,6 @@
 import http from "./http";
 
-/* ===================== TYPES ===================== */
-
-export interface LeadPayload {
-    name: string;
-    phone: string;
-    course: string;
-    source?: string;
-    assignedTo?: string; // CSR ID
-    createdBy?: string;
-    status?: string;
-}
-
-export interface UpdateLeadPayload {
-    name?: string;
-    phone?: string;
-    course?: string;
-    status?: string;
-    assignedTo?: string;
-}
+/* ===================== TYPES & INTERFACES ===================== */
 
 export interface Lead {
     _id: string;
@@ -26,107 +8,128 @@ export interface Lead {
     phone: string;
     course: string;
     status?: string;
+    source?: string;
     assignedTo?: { _id: string; name: string } | null;
+    createdAt?: string;
 }
 
-export interface ExcelLead {
+export interface LeadPayload {
     name: string;
     phone: string;
     course: string;
+    source?: string;
+    assignedTo?: string; // CSR ID
+    status?: string;
 }
 
-/* ===================== CSR / ADMIN ===================== */
+export interface UpdateLeadPayload extends Partial<LeadPayload> { }
 
-// Get leads by role (CSR or Admin)
+// Common API Response Wrapper
+interface ApiResponse<T> {
+    success: boolean;
+    message: string;
+    data: T;
+    count?: number;
+}
+
+/* ===================== CORE LEAD FUNCTIONS ===================== */
+
+/**
+ * Get leads based on role. 
+ * If role is 'csr', it fetches leads assigned to that CSR.
+ */
 export const getLeadsByRole = async (role: string, csrId?: string): Promise<Lead[]> => {
     try {
-        const url =
-            role === "csr"
-                ? csrId
-                    ? `/lead/csr/${csrId}`
-                    : `/lead/csr`
-                : "/lead/get-all-leads";
-        const res = await http.get<{ success: boolean; message: string; data: Lead[]; count: number }>(url);
+        const url = role === "csr"
+            ? (csrId ? `/lead/csr/${csrId}` : `/lead/csr`)
+            : "/lead/get-all-leads";
+
+        const res = await http.get<ApiResponse<Lead[]>>(url);
         return res.data.data || [];
     } catch (err: any) {
-        console.error("Error fetching leads:", err.response?.data?.message || err.message);
+        const msg = err.response?.data?.message || "Error fetching leads";
+        console.error(msg);
         return [];
     }
 };
 
-// Create a new lead
+/**
+ * Create a single lead
+ */
 export const createLead = async (data: LeadPayload): Promise<Lead> => {
     try {
-        const res = await http.post<{ success: boolean; message: string; data: Lead }>("/lead/create-leads", data);
+        const res = await http.post<ApiResponse<Lead>>("/lead/create-leads", data);
         return res.data.data;
     } catch (err: any) {
         throw new Error(err.response?.data?.message || "Failed to create lead");
     }
 };
 
-// Update lead
+/**
+ * Update existing lead information
+ */
 export const updateLead = async (id: string, data: UpdateLeadPayload): Promise<Lead> => {
     try {
-        const res = await http.patch<{ success: boolean; message: string; data: Lead }>(`/lead/update-leads/${id}`, data);
+        const res = await http.patch<ApiResponse<Lead>>(`/lead/update-leads/${id}`, data);
         return res.data.data;
     } catch (err: any) {
         throw new Error(err.response?.data?.message || "Failed to update lead");
     }
 };
 
-// Delete lead
-export const deleteLead = async (id: string): Promise<{ message: string }> => {
+/**
+ * Delete a lead
+ */
+export const deleteLead = async (id: string): Promise<{ success: boolean; message: string }> => {
     try {
-        const res = await http.delete<{ success: boolean; message: string }>(`/lead/delete-leads/${id}`);
-        return res.data;
+        const res = await http.delete<ApiResponse<null>>(`/lead/delete-leads/${id}`);
+        return { success: res.data.success, message: res.data.message };
     } catch (err: any) {
         throw new Error(err.response?.data?.message || "Failed to delete lead");
     }
 };
 
-// Convert lead to sale
+/**
+ * Convert a lead to a sale (CSR/Admin action)
+ */
 export const convertLeadToSale = async (id: string, amount: number): Promise<Lead> => {
     try {
-        const res = await http.post<{ success: boolean; message: string; data: Lead }>(
-            `/lead/convert-to-sale/${id}`,
-            { amount }
-        );
+        const res = await http.post<ApiResponse<Lead>>(`/lead/convert-to-sale/${id}`, { amount });
         return res.data.data;
     } catch (err: any) {
         throw new Error(err.response?.data?.message || "Failed to convert lead to sale");
     }
 };
 
-/* ===================== EXCEL UPLOAD (CSR) ===================== */
+/* ===================== EXCEL OPERATIONS ===================== */
 
 /**
- * FIXED: Ab ye function File accept karega taake build error na aaye.
- * Backend endpoint: /lead/upload-excel
+ * CSR Excel Upload: Uploads leads and automatically assigns them to the CSR
  */
-export const uploadExcelLeads = async (file: File, csrId: string): Promise<{ message: string }> => {
-    try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("csrId", csrId);
+export const uploadExcelLeads = async (file: File, csrId: string): Promise<ApiResponse<any>> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("assignedTo", csrId); // Backend might expect 'assignedTo' or 'csrId'
 
-        const res = await http.post<{ success: boolean; message: string }>("/lead/upload-excel", formData, {
+    try {
+        const res = await http.post<ApiResponse<any>>("/lead/upload-excel", formData, {
             headers: { "Content-Type": "multipart/form-data" },
         });
-
         return res.data;
     } catch (err: any) {
-        console.error("Excel upload error:", err);
-        throw new Error(err.response?.data?.message || err.message || "Excel upload failed");
+        throw new Error(err.response?.data?.message || "Excel upload failed");
     }
 };
 
-/* ===================== BULK INSERT (ADMIN) ===================== */
+/**
+ * Admin Bulk Insert: Uploads leads to the general pool (or as assigned in Excel)
+ */
+export const bulkInsertLeads = async (file: File): Promise<ApiResponse<any>> => {
+    const formData = new FormData();
+    formData.append("file", file);
 
-export const bulkInsertLeads = async (file: File): Promise<{ message: string }> => {
     try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const res = await http.post<{ success: boolean; message: string }>("/lead/bulk-insert-excel", formData, {
+        const res = await http.post<ApiResponse<any>>("/lead/bulk-insert-excel", formData, {
             headers: { "Content-Type": "multipart/form-data" },
         });
         return res.data;

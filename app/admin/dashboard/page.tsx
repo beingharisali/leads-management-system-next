@@ -1,350 +1,349 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { Toaster, toast } from "react-hot-toast";
+import * as XLSX from "xlsx";
+
+// APIs
 import { getAdminStats } from "@/services/dashboard.api";
 import { createCSR } from "@/services/auth.api";
+import { getLeadsByRole, bulkInsertLeads } from "@/services/lead.api";
+
+// Components
 import CSRSidebar from "@/components/CsrSidebar";
 import CSRLeadsPanel from "@/components/CsrLeadPanel";
 import DashboardGraphs from "@/components/DashboardGraphs";
-import * as XLSX from "xlsx";
-
-import {
-    getLeadsByRole,
-    bulkInsertLeads,
-} from "@/services/lead.api";
-
 import SummaryCard from "@/components/SummaryCard";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
-import toast, { Toaster } from "react-hot-toast";
 
-/* ================= LOGOUT ================= */
-const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("role");
-    window.location.href = "/login";
-};
-
-/* ================= COMPONENT ================= */
 export default function AdminDashboardPage() {
+    // Data States
     const [data, setData] = useState<any>(null);
     const [leads, setLeads] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<"day" | "week" | "month">("day");
+
+    // Action States
     const [uploading, setUploading] = useState(false);
-
-    const [showCSRModal, setShowCSRModal] = useState(false);
-    const [csrName, setCsrName] = useState("");
-    const [csrEmail, setCsrEmail] = useState("");
-    const [csrPassword, setCsrPassword] = useState("");
     const [csrLoading, setCsrLoading] = useState(false);
-
-    const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
-
-    /* ================= EXCEL PREVIEW STATE ================= */
+    const [showCSRModal, setShowCSRModal] = useState(false);
     const [showExcelPreview, setShowExcelPreview] = useState(false);
-    const [previewLeads, setPreviewLeads] = useState<any[]>([]);
-    const [validLeads, setValidLeads] = useState<any[]>([]);
 
-    /* ================= FETCH DASHBOARD DATA ================= */
-    const fetchStats = async () => {
-        setLoading(true);
+    // Form & Selection States
+    const [csrForm, setCsrForm] = useState({ name: "", email: "", password: "" });
+    const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
+    const [previewLeads, setPreviewLeads] = useState<any[]>([]);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+    /* ================= FETCH DATA ================= */
+    const fetchDashboardData = useCallback(async () => {
+        if (!data) setLoading(true);
         try {
             const [statsRes, leadsRes] = await Promise.all([
                 getAdminStats(filter),
                 getLeadsByRole("admin"),
             ]);
-            const activeLeads = leadsRes.filter((l: any) => l.status !== "sale");
+
+            const activeLeads = (leadsRes || []).filter((l: any) => l.status !== "sale");
+
             setData(statsRes);
             setLeads(activeLeads);
+            setError("");
         } catch (err: any) {
-            console.error(err);
-            setError("Failed to load dashboard");
+            console.error("Dashboard Fetch Error:", err);
+            setError(err.message || "Failed to load dashboard data");
         } finally {
             setLoading(false);
         }
-    };
+    }, [filter, data]);
 
     useEffect(() => {
-        fetchStats();
-    }, [filter]);
+        fetchDashboardData();
+    }, [fetchDashboardData]);
 
-    const csrOptions = data?.csrPerformance || [];
+    /* ================= ACTIONS ================= */
+    const handleLogout = () => {
+        localStorage.clear();
+        window.location.href = "/login";
+    };
 
-    /* ================= CREATE CSR ================= */
     const handleCreateCSR = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!csrName || !csrEmail || !csrPassword) return toast.error("All fields are required");
-
         setCsrLoading(true);
         try {
-            await createCSR({ name: csrName, email: csrEmail, password: csrPassword });
-            toast.success("CSR created successfully");
-            setCsrName(""); setCsrEmail(""); setCsrPassword(""); setShowCSRModal(false);
-            fetchStats();
+            await createCSR(csrForm);
+            toast.success("CSR account created!");
+            setCsrForm({ name: "", email: "", password: "" });
+            setShowCSRModal(false);
+            fetchDashboardData();
         } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.msg || "Failed to create CSR");
+            toast.error(err.message || "Could not create CSR");
         } finally {
             setCsrLoading(false);
         }
     };
 
-    /* ================= EXCEL UPLOAD & PREVIEW ================= */
-    const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files?.length) return;
+    const handleExcelSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setSelectedFile(file);
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: "binary" });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+
+                // FIXED: 'raw: false' ensures we get formatted strings for phone numbers
+                const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+
+                if (rawJson.length === 0) throw new Error("File is empty");
+
+                const headers = Object.keys(rawJson[0]);
+
+                // Map leads for preview
+                const mapped = rawJson.slice(0, 10).map((row, idx) => {
+                    const nameKey = headers.find(h => h.toLowerCase().includes("name")) || "";
+                    const phoneKey = headers.find(h => h.toLowerCase().includes("phone")) || "";
+                    const courseKey = headers.find(h => h.toLowerCase().includes("course")) || "";
+
+                    return {
+                        name: row[nameKey] || "No Name",
+                        phone: String(row[phoneKey] || "").trim(),
+                        course: row[courseKey] || "N/A",
+                        source: "Excel Import",
+                        rowIndex: idx + 2
+                    };
+                });
+
+                setPreviewLeads(mapped);
+                setShowExcelPreview(true);
+            } catch (err: any) {
+                toast.error(err.message || "Invalid Excel format");
+            }
+        };
+        reader.readAsBinaryString(file);
+        e.target.value = ""; // Reset input
+    };
+
+    const confirmExcelUpload = async () => {
+        if (!selectedFile) return;
         setUploading(true);
-
         try {
-            const file = e.target.files[0];
-            const dataBuffer = await file.arrayBuffer();
-            const workbook = XLSX.read(dataBuffer);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-
-            const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-            if (!rawJson.length) {
-                toast.error("Excel sheet is empty");
-                return;
+            // Frontend validation for empty phone numbers
+            const invalidRow = previewLeads.find(l => !l.phone || l.phone.length < 5);
+            if (invalidRow) {
+                throw new Error(`Invalid phone number found near row ${invalidRow.rowIndex}`);
             }
 
-            const headers = Object.keys(rawJson[0]);
-
-            const mappedLeads = rawJson.map((row, index) => {
-                const lead = {
-                    name: row[headers.find(h => h.toLowerCase().includes("name")) || headers[0]] || "",
-                    phone: row[headers.find(h => h.toLowerCase().includes("phone") || h.toLowerCase().includes("contact")) || headers[1]] || "",
-                    course: row[headers.find(h => h.toLowerCase().includes("course") || h.toLowerCase().includes("program")) || headers[2]] || "",
-                    status: row[headers.find(h => h.toLowerCase().includes("status")) || "Status"] || "new",
-                    rowIndex: index + 2,
-                };
-                return lead;
-            });
-
-            setPreviewLeads(mappedLeads);
-            setValidLeads(mappedLeads.filter(l => l.name && l.phone && l.course));
-            setShowExcelPreview(true);
-
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Excel upload failed");
-        } finally {
-            setUploading(false);
-            e.target.value = "";
-        }
-    };
-
-    /* ================= UPLOAD CONFIRMED LEADS ================= */
-    const confirmExcelUpload = async () => {
-        if (!validLeads.length) {
-            toast.error("No valid leads to upload");
-            return;
-        }
-        setUploading(true);
-        try {
-            // Convert validLeads array to Excel file
-            const worksheet = XLSX.utils.json_to_sheet(validLeads.map(l => ({
-                name: l.name,
-                phone: l.phone,
-                course: l.course,
-                status: l.status || "new",
-                assignedTo: selectedCSR || "", // CSR ID
-            })));
-
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
-
-            const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-            const file = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-
-            await bulkInsertLeads(new File([file], "leads.xlsx"));
-
-            toast.success(`${validLeads.length} leads uploaded successfully!`);
-            fetchStats();
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Upload failed");
-        } finally {
-            setUploading(false);
+            await bulkInsertLeads(selectedFile);
+            toast.success("Leads imported successfully!");
             setShowExcelPreview(false);
-            setPreviewLeads([]);
-            setValidLeads([]);
+            setSelectedFile(null);
+            fetchDashboardData();
+        } catch (err: any) {
+            const errorMsg = err.response?.data?.message || err.message || "Server Error 500";
+            toast.error(errorMsg);
+        } finally {
+            setUploading(false);
         }
     };
 
-    if (loading) return <Loading />;
+    if (loading && !data) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
 
     return (
-        <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
-            <Toaster position="top-right" reverseOrder={false} />
+        <div className="p-4 md:p-8 space-y-8 bg-[#F8FAFC] min-h-screen text-slate-900 font-sans">
+            <Toaster position="top-right" />
 
-            {/* HEADER */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
-                <div className="flex flex-wrap gap-2">
+            {/* --- HEADER --- */}
+            <header className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60 gap-4">
+                <div className="text-center md:text-left">
+                    <h1 className="text-3xl font-black tracking-tight text-slate-800">
+                        Admin <span className="text-indigo-600 italic">Central</span>
+                    </h1>
+                    <p className="text-slate-400 text-sm font-medium">Monitoring system performance and CSR leads</p>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-3">
                     <button
                         onClick={() => setShowCSRModal(true)}
-                        className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-medium shadow transition"
+                        className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:scale-105 transition-all active:scale-95 shadow-lg shadow-slate-200"
                     >
                         + Create CSR
                     </button>
-
-                    <label className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg cursor-pointer shadow transition">
-                        {uploading ? "Uploading..." : "Upload Excel"}
-                        <input type="file" hidden onChange={handleExcelUpload} />
+                    <label className={`bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold text-sm transition-all cursor-pointer shadow-lg shadow-indigo-100 ${uploading ? 'opacity-50' : 'hover:bg-indigo-700'}`}>
+                        {uploading ? "Importing..." : "Bulk Import"}
+                        <input type="file" hidden accept=".xlsx, .xls" disabled={uploading} onChange={handleExcelSelection} />
                     </label>
-
-                    <button
-                        onClick={handleLogout}
-                        className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-medium shadow transition"
-                    >
+                    <button onClick={handleLogout} className="bg-rose-50 text-rose-600 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-rose-100 transition-all">
                         Logout
                     </button>
                 </div>
+            </header>
+
+            {/* --- STATS GRID --- */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <SummaryCard title="Total Leads" value={data?.totalLeads || 0} trend="+12%" />
+                <SummaryCard title="Successful Sales" value={data?.totalSales || 0} color="green" />
+                <SummaryCard title="Active Team" value={data?.totalCSRs || 0} color="blue" />
+                <SummaryCard title="Win Rate" value={data?.conversionRate || "0%"} color="purple" />
             </div>
 
-            {/* CREATE CSR MODAL */}
-            {showCSRModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                    <div className="bg-white p-6 rounded-2xl w-96 shadow-2xl border border-gray-200">
-                        <h2 className="text-xl font-semibold mb-4 text-gray-800">Create CSR</h2>
-                        <form onSubmit={handleCreateCSR} className="space-y-3">
-                            <input
-                                value={csrName}
-                                onChange={e => setCsrName(e.target.value)}
-                                placeholder="Name"
-                                required
-                                className="border p-2 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                            <input
-                                value={csrEmail}
-                                onChange={e => setCsrEmail(e.target.value)}
-                                placeholder="Email"
-                                type="email"
-                                required
-                                className="border p-2 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                            <input
-                                value={csrPassword}
-                                onChange={e => setCsrPassword(e.target.value)}
-                                placeholder="Password"
-                                type="password"
-                                required
-                                minLength={6}
-                                maxLength={20}
-                                className="border p-2 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-                            />
-                            {csrPassword.length > 0 && (csrPassword.length < 6 || csrPassword.length > 20) && (
-                                <p className="text-red-500 text-sm mt-1">Password must be 6-20 characters</p>
-                            )}
-                            <div className="flex justify-end gap-2 mt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCSRModal(false)}
-                                    className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={csrLoading || csrPassword.length < 6 || csrPassword.length > 20}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition"
-                                >
-                                    {csrLoading ? "Creating..." : "Create"}
-                                </button>
-                            </div>
-                        </form>
+            {/* --- MAIN CONTENT --- */}
+            <main className="grid grid-cols-12 gap-8">
+                <aside className="col-span-12 lg:col-span-3">
+                    <div className="sticky top-8">
+                        <CSRSidebar
+                            csrs={data?.csrPerformance || []}
+                            selectedCSR={selectedCSR}
+                            onSelect={setSelectedCSR}
+                        />
                     </div>
-                </div>
-            )}
+                </aside>
 
-            {/* EXCEL PREVIEW MODAL */}
+                <section className="col-span-12 lg:col-span-9 space-y-8">
+                    <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[600px]">
+                        <CSRLeadsPanel
+                            leads={leads}
+                            selectedCSR={selectedCSR}
+                            onConvertToSale={fetchDashboardData}
+                            onDeleteLead={fetchDashboardData}
+                        />
+                    </div>
+
+                    <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm">
+                        <div className="flex justify-between items-center mb-8">
+                            <h3 className="text-xl font-bold text-slate-800">Performance Analytics</h3>
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                {["day", "week", "month"].map((f) => (
+                                    <button
+                                        key={f}
+                                        onClick={() => setFilter(f as any)}
+                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${filter === f ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}
+                                    >
+                                        {f}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        {data?.leadsStats && (
+                            <DashboardGraphs
+                                leadsStats={data.leadsStats}
+                                salesStats={data.salesStats}
+                                filter={filter}
+                                setFilter={setFilter}
+                            />
+                        )}
+                    </div>
+                </section>
+            </main>
+
+            {/* --- EXCEL PREVIEW MODAL --- */}
             {showExcelPreview && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 overflow-auto p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6">
-                        <h2 className="text-xl font-semibold mb-4 text-gray-800">Excel Preview</h2>
-                        <div className="overflow-auto max-h-96">
-                            <table className="w-full border border-gray-300">
-                                <thead className="bg-gray-100">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex justify-center items-center z-[60] p-4">
+                    <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl p-10 flex flex-col border border-slate-100">
+                        <h2 className="text-2xl font-black text-slate-800">Review Import</h2>
+                        <p className="text-slate-400 mb-8 text-sm italic">Sample of records from {selectedFile?.name}</p>
+
+                        <div className="flex-1 max-h-[400px] overflow-y-auto border border-slate-100 rounded-3xl mb-8">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50/50 text-slate-400 uppercase text-[10px] tracking-widest font-bold sticky top-0">
                                     <tr>
-                                        <th className="border p-2">Row</th>
-                                        <th className="border p-2">Name</th>
-                                        <th className="border p-2">Phone</th>
-                                        <th className="border p-2">Course</th>
-                                        <th className="border p-2">Status</th>
+                                        <th className="p-5">Name</th>
+                                        <th className="p-5">Phone</th>
+                                        <th className="p-5">Course</th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    {previewLeads.map((lead, idx) => {
-                                        const invalid = !lead.name || !lead.phone || !lead.course;
-                                        return (
-                                            <tr key={idx} className={invalid ? "bg-red-100" : ""}>
-                                                <td className="border p-2">{lead.rowIndex}</td>
-                                                <td className="border p-2">{lead.name || <span className="text-red-500">Missing</span>}</td>
-                                                <td className="border p-2">{lead.phone || <span className="text-red-500">Missing</span>}</td>
-                                                <td className="border p-2">{lead.course || <span className="text-red-500">Missing</span>}</td>
-                                                <td className="border p-2">{lead.status}</td>
-                                            </tr>
-                                        );
-                                    })}
+                                <tbody className="divide-y divide-slate-50 text-slate-700">
+                                    {previewLeads.map((lead, i) => (
+                                        <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="p-5 font-semibold">{lead.name}</td>
+                                            <td className="p-5 font-mono text-indigo-500">{lead.phone}</td>
+                                            <td className="p-5">{lead.course}</td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
-                        <div className="flex justify-end gap-2 mt-4">
+
+                        <div className="flex gap-4">
                             <button
-                                onClick={() => setShowExcelPreview(false)}
-                                className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg transition"
+                                onClick={() => { setShowExcelPreview(false); setSelectedFile(null); }}
+                                className="flex-1 py-4 font-bold text-slate-400 hover:text-slate-600"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={confirmExcelUpload}
-                                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition"
-                                disabled={uploading || !validLeads.length}
+                                disabled={uploading}
+                                className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:bg-slate-300"
                             >
-                                {uploading ? "Uploading..." : `Upload ${validLeads.length} Leads`}
+                                {uploading ? "Importing Data..." : "Confirm & Import"}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* SIDEBAR + LEADS PANEL */}
-            <div className="grid grid-cols-12 gap-6">
-                <div className="col-span-12 md:col-span-3">
-                    <CSRSidebar csrs={csrOptions} selectedCSR={selectedCSR} onSelect={setSelectedCSR} />
-                </div>
-                <div className="col-span-12 md:col-span-9">
-                    <CSRLeadsPanel
-                        leads={leads}
-                        selectedCSR={selectedCSR}
-                        onConvertToSale={() => { }}
-                        onDeleteLead={() => { }}
-                    />
-                </div>
-            </div>
+            {/* --- CREATE CSR MODAL --- */}
+            {showCSRModal && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex justify-center items-center z-[60] p-4">
+                    <div className="bg-white p-10 rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100">
+                        <div className="mb-8 text-center md:text-left">
+                            <h2 className="text-2xl font-black text-slate-800">New Team Member</h2>
+                            <p className="text-slate-400 text-sm">Create a new CSR account to start assigning leads.</p>
+                        </div>
 
-            {/* SUMMARY CARDS */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                <SummaryCard title="Total Leads" value={data?.totalLeads || 0} />
-                <SummaryCard title="Total Sales" value={data?.totalSales || 0} />
-                <SummaryCard title="Total CSRs" value={data?.totalCSRs || 0} />
-                <SummaryCard title="Conversion Rate" value={data?.conversionRate || "0%"} />
-            </div>
+                        <form onSubmit={handleCreateCSR} className="space-y-5">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Full Name</label>
+                                <input
+                                    required
+                                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-indigo-600 outline-none transition-all text-sm font-medium"
+                                    placeholder="John Doe"
+                                    value={csrForm.name}
+                                    onChange={e => setCsrForm({ ...csrForm, name: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Email Address</label>
+                                <input
+                                    type="email" required
+                                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-indigo-600 outline-none transition-all text-sm font-medium"
+                                    placeholder="john@example.com"
+                                    value={csrForm.email}
+                                    onChange={e => setCsrForm({ ...csrForm, email: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Secure Password</label>
+                                <input
+                                    type="password" required minLength={6}
+                                    className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-transparent focus:border-indigo-600 outline-none transition-all text-sm font-medium"
+                                    placeholder="••••••••"
+                                    value={csrForm.password}
+                                    onChange={e => setCsrForm({ ...csrForm, password: e.target.value })}
+                                />
+                            </div>
 
-            {/* GRAPHS + FILTER */}
-            {data && (
-                <DashboardGraphs
-                    leadsStats={data.leadsStats}
-                    salesStats={data.salesStats}
-                    filter={filter}
-                    setFilter={setFilter as (f: "day" | "week" | "month") => void}
-                />
+                            <div className="flex gap-4 pt-6">
+                                <button type="button" onClick={() => setShowCSRModal(false)} className="flex-1 font-bold text-slate-400">Cancel</button>
+                                <button
+                                    type="submit"
+                                    disabled={csrLoading}
+                                    className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
+                                >
+                                    {csrLoading ? "Creating..." : "Save Member"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
         </div>
     );
