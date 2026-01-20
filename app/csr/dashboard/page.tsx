@@ -7,7 +7,6 @@ import {
     getLeadsByRole,
     deleteLead,
     convertLeadToSale,
-    uploadExcelLeads,
     createLead,
     updateLead,
     LeadPayload,
@@ -17,10 +16,10 @@ import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
-import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
+import { getUserRole, getUserId, logout, getToken } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
+import * as XLSX from "xlsx";
 
-// ================= TYPES =================
 type Filter = "day" | "week" | "month";
 
 interface Stats {
@@ -40,10 +39,15 @@ interface Lead {
     assignedTo?: { _id: string; name: string } | null;
 }
 
-// ================= CSR DASHBOARD =================
+interface ExcelLead {
+    name: string;
+    course: string;
+    phone: string;
+    isValid: boolean;
+}
+
 export default function CSRDashboard() {
     const router = useRouter();
-
     const [leads, setLeads] = useState<Lead[]>([]);
     const [stats, setStats] = useState<Stats>({
         totalLeads: 0,
@@ -52,14 +56,13 @@ export default function CSRDashboard() {
         leadsStats: { day: 0, week: 0, month: 0 },
         salesStats: { day: 0, week: 0, month: 0 },
     });
-
     const [filter, setFilter] = useState<Filter>("day");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [uploading, setUploading] = useState(false);
     const [csrId, setCsrId] = useState<string | null>(null);
 
-    // ================= Lead Modal States =================
+    const [excelLeads, setExcelLeads] = useState<ExcelLead[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingLead, setEditingLead] = useState<Lead | null>(null);
     const [leadForm, setLeadForm] = useState({ name: "", course: "", phone: "" });
@@ -69,11 +72,9 @@ export default function CSRDashboard() {
         try {
             setLoading(true);
             setError("");
-
             const role = await getUserRole();
             const userId = await getUserId();
             if (!role || !userId) throw new Error("User not authenticated");
-
             setCsrId(userId);
 
             const [leadsRes, statsRes] = await Promise.all([
@@ -100,7 +101,7 @@ export default function CSRDashboard() {
         fetchData();
     }, [filter]);
 
-    // ================= ACTIONS =================
+    // ================= DELETE / CONVERT =================
     const handleDelete = async (id: string) => {
         if (!confirm("Are you sure you want to delete this lead?")) return;
         try {
@@ -128,28 +129,85 @@ export default function CSRDashboard() {
         }
     };
 
+    // ================= EXCEL UPLOAD =================
     const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.length) return;
+
         try {
-            setUploading(true);
-            await uploadExcelLeads(e.target.files[0]);
-            toast.success("Excel uploaded successfully");
-            fetchData();
+            const data = await e.target.files[0].arrayBuffer();
+            const workbook = XLSX.read(data);
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
+
+            // Parse Excel safely
+            const parsed: ExcelLead[] = jsonData.map((row) => {
+                const name = (row.Name || row.name || "").toString().trim();
+                const course = (row.Course || row.course || "").toString().trim();
+                const phone = (row.Phone || row.phone || "").toString().trim();
+
+                return {
+                    name,
+                    course,
+                    phone,
+                    isValid: !!name && !!course && !!phone,
+                };
+            });
+
+            const validLeads = parsed.filter((l) => l.isValid);
+            console.log("Valid Leads:", validLeads);
+            setExcelLeads(validLeads);
+
+            if (!validLeads.length) toast.error("No valid leads found in Excel");
+            else toast.success(`${validLeads.length} leads ready to upload`);
         } catch (err: any) {
             console.error(err);
-            toast.error("Excel upload failed");
-        } finally {
-            setUploading(false);
-            e.target.value = "";
+            toast.error("Failed to read Excel file");
         }
     };
 
-    const handleLogout = () => {
-        logout();
-        router.push("/login");
+    const handleExcelSubmit = async () => {
+        if (!csrId || !excelLeads.length) return toast.error("No leads to upload");
+        console.log("CSR ID:", csrId)
+        try {
+            setUploading(true);
+
+            const token = getToken();
+            if (!token) throw new Error("Token not found");
+
+            // Backend expects JSON with csrId & leads array
+            const res = await fetch("http://localhost:5000/api/v1/lead/upload-excel-array", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    csrId,
+                    leads: excelLeads.map((l) => ({
+                        name: l.name,
+                        course: l.course,
+                        phone: l.phone,
+                    })),
+                }),
+            });
+
+            if (!res.ok) {
+                const errData = await res.text();
+                throw new Error(`Upload failed: ${res.status} ${errData}`);
+            }
+
+            toast.success("Excel uploaded successfully");
+            setExcelLeads([]);
+            fetchData();
+        } catch (err: any) {
+            console.error(err);
+            toast.error(err?.message || "Excel upload failed");
+        } finally {
+            setUploading(false);
+        }
     };
 
-    // ================= Lead Modal =================
+    // ================= LEAD FORM =================
     const openCreateModal = () => {
         setEditingLead(null);
         setLeadForm({ name: "", course: "", phone: "" });
@@ -168,32 +226,33 @@ export default function CSRDashboard() {
 
     const handleLeadFormSubmit = async () => {
         if (!csrId) return toast.error("CSR ID not found");
+        if (!leadForm.name || !leadForm.course || !leadForm.phone)
+            return toast.error("Please fill all fields");
 
         try {
-            if (!leadForm.name || !leadForm.course || !leadForm.phone)
-                return toast.error("Please fill all fields");
-
             const payload: LeadPayload = {
                 name: leadForm.name,
                 course: leadForm.course,
                 phone: leadForm.phone,
                 assignedTo: csrId,
+                status: editingLead?.status || "new",
             };
 
-            if (editingLead) {
-                await updateLead(editingLead._id, payload);
-                toast.success("Lead updated successfully");
-            } else {
-                await createLead(payload);
-                toast.success("Lead created successfully");
-            }
+            if (editingLead) await updateLead(editingLead._id, payload);
+            else await createLead(payload);
 
+            toast.success(editingLead ? "Lead updated successfully" : "Lead created successfully");
             setIsModalOpen(false);
             fetchData();
         } catch (err: any) {
             console.error(err);
-            toast.error(err?.response?.data?.message || "Failed to save lead");
+            toast.error(err?.message || "Failed to save lead");
         }
+    };
+
+    const handleLogout = () => {
+        logout();
+        router.push("/login");
     };
 
     if (loading) return <Loading />;
@@ -203,7 +262,6 @@ export default function CSRDashboard() {
         <ProtectedRoute role="csr">
             <Toaster position="top-right" reverseOrder={false} />
             <div className="p-6 space-y-6">
-
                 {/* Header */}
                 <div className="flex justify-between items-center">
                     <div>
@@ -211,6 +269,7 @@ export default function CSRDashboard() {
                         <p className="text-gray-500 mt-1">CSR ID: {csrId}</p>
                     </div>
                     <button
+                        type="button"
                         onClick={handleLogout}
                         className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
                     >
@@ -218,7 +277,7 @@ export default function CSRDashboard() {
                     </button>
                 </div>
 
-                {/* Filters */}
+                {/* Filters & Create / Upload */}
                 <div className="flex justify-between items-center mt-4">
                     <select
                         value={filter}
@@ -229,129 +288,149 @@ export default function CSRDashboard() {
                         <option value="week">Week</option>
                         <option value="month">Month</option>
                     </select>
-                    <button
-                        onClick={openCreateModal}
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                    >
-                        + Create Lead
-                    </button>
+
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={openCreateModal}
+                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                        >
+                            + Create Lead
+                        </button>
+
+                        <div className="flex gap-2">
+                            <label className="bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition">
+                                {uploading ? "Uploading..." : "Upload Excel"}
+                                <input type="file" hidden onChange={handleExcelUpload} />
+                            </label>
+
+                            {excelLeads.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={handleExcelSubmit}
+                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition"
+                                >
+                                    Submit Excel
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
-                {/* Summary Cards */}
-                <div className="grid md:grid-cols-3 gap-4 mt-4">
+                {/* Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                     <SummaryCard title="Total Leads" value={stats.totalLeads} />
                     <SummaryCard title="Total Sales" value={stats.totalSales} />
                     <SummaryCard title="Conversion Rate" value={stats.conversionRate} />
                 </div>
 
-                {/* Charts */}
-                <div className="grid md:grid-cols-2 gap-6 mt-6">
-                    <CSRStatsChart title="Leads Analytics" {...stats.leadsStats} />
-                    <CSRStatsChart title="Sales Analytics" {...stats.salesStats} />
-                </div>
-
                 {/* Leads Table */}
-                <div className="bg-white shadow rounded p-4 mt-6">
-                    <h2 className="font-semibold mb-3">My Leads</h2>
-                    {leads.length ? (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm table-auto">
-                                <thead>
-                                    <tr className="border-b">
-                                        <th className="p-2 text-left">Name</th>
-                                        <th className="p-2 text-left">Course</th>
-                                        <th className="p-2 text-left">Phone</th>
-                                        <th className="p-2 text-left">Status</th>
-                                        <th className="p-2 text-left">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {leads.map((l) => (
-                                        <tr key={l._id} className="border-b hover:bg-gray-50 transition">
-                                            <td className="p-2">{l.name}</td>
-                                            <td className="p-2">{l.course}</td>
-                                            <td className="p-2">{l.phone}</td>
-                                            <td className="p-2">{l.status || "Pending"}</td>
-                                            <td className="p-2 space-x-2">
-                                                <button
-                                                    onClick={() => openEditModal(l)}
-                                                    className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 transition"
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    onClick={() => handleConvertToSale(l._id)}
-                                                    className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
-                                                >
-                                                    Convert
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(l._id)}
-                                                    className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    ) : (
-                        <p className="text-gray-500">No leads found</p>
-                    )}
+                <div className="mt-6 overflow-x-auto">
+                    <table className="min-w-full border">
+                        <thead>
+                            <tr className="bg-gray-200">
+                                <th className="p-2 border">Name</th>
+                                <th className="p-2 border">Course</th>
+                                <th className="p-2 border">Phone</th>
+                                <th className="p-2 border">Status</th>
+                                <th className="p-2 border">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {leads.map((lead) => (
+                                <tr key={lead._id} className="text-center">
+                                    <td className="p-2 border">{lead.name}</td>
+                                    <td className="p-2 border">{lead.course}</td>
+                                    <td className="p-2 border">{lead.phone}</td>
+                                    <td className="p-2 border">{lead.status}</td>
+                                    <td className="p-2 border flex justify-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => openEditModal(lead)}
+                                            className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 transition"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDelete(lead._id)}
+                                            className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
+                                        >
+                                            Delete
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleConvertToSale(lead._id)}
+                                            className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                                        >
+                                            Convert
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
 
-                {/* Excel Upload */}
-                <div className="mt-4">
-                    <label className="inline-block bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition">
-                        {uploading ? "Uploading..." : "Upload Excel"}
-                        <input type="file" hidden onChange={handleExcelUpload} />
-                    </label>
+                {/* CSR Stats Chart */}
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <CSRStatsChart
+                        title="Leads"
+                        day={stats.leadsStats.day}
+                        week={stats.leadsStats.week}
+                        month={stats.leadsStats.month}
+                    />
+                    <CSRStatsChart
+                        title="Sales"
+                        day={stats.salesStats.day}
+                        week={stats.salesStats.week}
+                        month={stats.salesStats.month}
+                    />
                 </div>
 
-                {/* Lead Modal */}
+                {/* Modal */}
                 {isModalOpen && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                        <div className="bg-white p-6 rounded shadow-lg w-96">
-                            <h2 className="text-lg font-bold mb-4">
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white p-6 rounded-lg w-96">
+                            <h2 className="text-xl font-bold mb-4">
                                 {editingLead ? "Edit Lead" : "Create Lead"}
                             </h2>
                             <input
                                 type="text"
                                 name="name"
-                                placeholder="Name"
                                 value={leadForm.name}
                                 onChange={handleLeadFormChange}
-                                className="border p-2 w-full mb-2 rounded"
+                                placeholder="Name"
+                                className="w-full mb-3 p-2 border rounded"
                             />
                             <input
                                 type="text"
                                 name="course"
-                                placeholder="Course"
                                 value={leadForm.course}
                                 onChange={handleLeadFormChange}
-                                className="border p-2 w-full mb-2 rounded"
+                                placeholder="Course"
+                                className="w-full mb-3 p-2 border rounded"
                             />
                             <input
                                 type="text"
                                 name="phone"
-                                placeholder="Phone"
                                 value={leadForm.phone}
                                 onChange={handleLeadFormChange}
-                                className="border p-2 w-full mb-2 rounded"
+                                placeholder="Phone"
+                                className="w-full mb-3 p-2 border rounded"
                             />
-
-                            <div className="flex justify-end space-x-2 mt-4">
+                            <div className="flex justify-end gap-2 mt-4">
                                 <button
+                                    type="button"
                                     onClick={() => setIsModalOpen(false)}
-                                    className="px-3 py-1 rounded border hover:bg-gray-100 transition"
+                                    className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500 transition"
                                 >
                                     Cancel
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={handleLeadFormSubmit}
-                                    className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition"
+                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
                                 >
                                     {editingLead ? "Update" : "Create"}
                                 </button>

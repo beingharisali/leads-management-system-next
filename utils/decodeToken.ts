@@ -7,11 +7,15 @@ interface DecodedToken {
     [key: string]: any;
 }
 
+/* ================= GET TOKEN ================= */
+export function getToken(): string | null {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("token");
+}
+
 /* ================= GET USER ROLE ================= */
 export async function getUserRole(): Promise<"admin" | "csr" | null> {
-    if (typeof window === "undefined") return null;
-
-    const token = localStorage.getItem("token");
+    const token = getToken();
     if (!token) return null;
 
     try {
@@ -26,9 +30,7 @@ export async function getUserRole(): Promise<"admin" | "csr" | null> {
 
 /* ================= GET USER ID ================= */
 export async function getUserId(): Promise<string | null> {
-    if (typeof window === "undefined") return null;
-
-    const token = localStorage.getItem("token");
+    const token = getToken();
     if (!token) return null;
 
     try {
@@ -48,6 +50,6 @@ export function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
 
-    // hard redirect (safe for utils file)
+    // hard redirect to login
     window.location.href = "/login";
 }

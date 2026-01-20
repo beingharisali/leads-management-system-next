@@ -30,51 +30,54 @@ export default function CSRLeadsPanel({
         : leads;
 
     return (
-        <div className="bg-white rounded shadow p-4">
-            <h3 className="text-lg font-semibold mb-4">
+        <div className="bg-white rounded-xl shadow-md p-4 flex flex-col h-full">
+            <h3 className="text-xl font-semibold mb-4 border-b pb-2">
                 {selectedCSR ? "CSR Leads" : "All Leads"}
             </h3>
 
             {filteredLeads.length === 0 ? (
-                <p className="text-gray-500">No leads found</p>
+                <p className="text-gray-500 mt-6 text-center">No leads found</p>
             ) : (
-                <table className="w-full border">
-                    <thead className="bg-gray-100">
-                        <tr>
-                            <th className="p-2 border">Name</th>
-                            <th className="p-2 border">Phone</th>
-                            <th className="p-2 border">Course</th>
-                            <th className="p-2 border">CSR</th>
-                            <th className="p-2 border">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredLeads.map(lead => (
-                            <tr key={lead._id} className="text-center">
-                                <td className="border p-2">{lead.name}</td>
-                                <td className="border p-2">{lead.phone}</td>
-                                <td className="border p-2">{lead.course}</td>
-                                <td className="border p-2">
-                                    {lead.assignedTo?.name || "—"}
-                                </td>
-                                <td className="border p-2 space-x-2">
-                                    <button
-                                        onClick={() => onConvertToSale(lead._id)}
-                                        className="bg-green-600 text-white px-2 py-1 rounded"
-                                    >
-                                        Convert
-                                    </button>
-                                    <button
-                                        onClick={() => onDeleteLead(lead._id)}
-                                        className="bg-red-600 text-white px-2 py-1 rounded"
-                                    >
-                                        Delete
-                                    </button>
-                                </td>
+                <div className="overflow-auto max-h-[600px]">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
+                            <tr>
+                                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Name</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Phone</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Course</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">CSR</th>
+                                <th className="px-4 py-2 text-center text-sm font-semibold text-gray-700">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {filteredLeads.map((lead, idx) => (
+                                <tr
+                                    key={lead._id}
+                                    className={`transition hover:bg-gray-50 ${idx % 2 === 0 ? "bg-gray-50" : "bg-white"}`}
+                                >
+                                    <td className="px-4 py-2 text-gray-800">{lead.name}</td>
+                                    <td className="px-4 py-2 text-gray-800">{lead.phone}</td>
+                                    <td className="px-4 py-2 text-gray-800">{lead.course}</td>
+                                    <td className="px-4 py-2 text-gray-800">{lead.assignedTo?.name || "—"}</td>
+                                    <td className="px-4 py-2 flex justify-center gap-2">
+                                        <button
+                                            onClick={() => onConvertToSale(lead._id)}
+                                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg transition font-medium"
+                                        >
+                                            Convert
+                                        </button>
+                                        <button
+                                            onClick={() => onDeleteLead(lead._id)}
+                                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg transition font-medium"
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             )}
         </div>
     );
