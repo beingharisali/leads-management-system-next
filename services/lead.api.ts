@@ -24,7 +24,6 @@ export interface LeadPayload {
 
 export interface UpdateLeadPayload extends Partial<LeadPayload> { }
 
-// Common API Response Wrapper
 interface ApiResponse<T> {
     success: boolean;
     message: string;
@@ -34,10 +33,6 @@ interface ApiResponse<T> {
 
 /* ===================== CORE LEAD FUNCTIONS ===================== */
 
-/**
- * Get leads based on role. 
- * If role is 'csr', it fetches leads assigned to that CSR.
- */
 export const getLeadsByRole = async (role: string, csrId?: string): Promise<Lead[]> => {
     try {
         const url = role === "csr"
@@ -47,15 +42,11 @@ export const getLeadsByRole = async (role: string, csrId?: string): Promise<Lead
         const res = await http.get<ApiResponse<Lead[]>>(url);
         return res.data.data || [];
     } catch (err: any) {
-        const msg = err.response?.data?.message || "Error fetching leads";
-        console.error(msg);
+        console.error(err.response?.data?.message || "Error fetching leads");
         return [];
     }
 };
 
-/**
- * Create a single lead
- */
 export const createLead = async (data: LeadPayload): Promise<Lead> => {
     try {
         const res = await http.post<ApiResponse<Lead>>("/lead/create-leads", data);
@@ -65,9 +56,7 @@ export const createLead = async (data: LeadPayload): Promise<Lead> => {
     }
 };
 
-/**
- * Update existing lead information
- */
+// Common update function
 export const updateLead = async (id: string, data: UpdateLeadPayload): Promise<Lead> => {
     try {
         const res = await http.patch<ApiResponse<Lead>>(`/lead/update-leads/${id}`, data);
@@ -77,9 +66,16 @@ export const updateLead = async (id: string, data: UpdateLeadPayload): Promise<L
     }
 };
 
-/**
- * Delete a lead
- */
+// ADDED: This will fix your "red error" in the panel
+export const updateLeadStatus = async (id: string, status: string): Promise<Lead> => {
+    try {
+        const res = await http.patch<ApiResponse<Lead>>(`/lead/update-leads/${id}`, { status });
+        return res.data.data;
+    } catch (err: any) {
+        throw new Error(err.response?.data?.message || "Failed to update status");
+    }
+};
+
 export const deleteLead = async (id: string): Promise<{ success: boolean; message: string }> => {
     try {
         const res = await http.delete<ApiResponse<null>>(`/lead/delete-leads/${id}`);
@@ -89,10 +85,7 @@ export const deleteLead = async (id: string): Promise<{ success: boolean; messag
     }
 };
 
-/**
- * Convert a lead to a sale (CSR/Admin action)
- */
-export const convertLeadToSale = async (id: string, amount: number): Promise<Lead> => {
+export const convertLeadToSale = async (id: string, amount: number = 0): Promise<Lead> => {
     try {
         const res = await http.post<ApiResponse<Lead>>(`/lead/convert-to-sale/${id}`, { amount });
         return res.data.data;
@@ -103,13 +96,10 @@ export const convertLeadToSale = async (id: string, amount: number): Promise<Lea
 
 /* ===================== EXCEL OPERATIONS ===================== */
 
-/**
- * CSR Excel Upload: Uploads leads and automatically assigns them to the CSR
- */
 export const uploadExcelLeads = async (file: File, csrId: string): Promise<ApiResponse<any>> => {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("assignedTo", csrId); // Backend might expect 'assignedTo' or 'csrId'
+    formData.append("assignedTo", csrId);
 
     try {
         const res = await http.post<ApiResponse<any>>("/lead/upload-excel", formData, {
@@ -121,9 +111,6 @@ export const uploadExcelLeads = async (file: File, csrId: string): Promise<ApiRe
     }
 };
 
-/**
- * Admin Bulk Insert: Uploads leads to the general pool (or as assigned in Excel)
- */
 export const bulkInsertLeads = async (file: File): Promise<ApiResponse<any>> => {
     const formData = new FormData();
     formData.append("file", file);
