@@ -1,391 +1,344 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { Toaster, toast } from "react-hot-toast";
+import { motion, AnimatePresence } from "framer-motion";
+import * as XLSX from "xlsx";
+
+// APIs
 import { getAdminStats } from "@/services/dashboard.api";
 import { createCSR } from "@/services/auth.api";
-import CSRSidebar from "../../../components/CsrSidebar";
-import CSRLeadsPanel from "../../../components/CsrLeadPanel";
+import { getLeadsByRole, bulkInsertLeads } from "@/services/lead.api";
 
-import {
-    getLeadsByRole,
-    createLead,
-    updateLead,
-    deleteLead,
-    uploadExcelLeads,
-    convertLeadToSale,
-    LeadPayload,
-} from "@/services/lead.api";
+// Components
+import CSRSidebar from "@/components/CsrSidebar";
+import CSRLeadsPanel from "@/components/CsrLeadPanel";
+import DashboardGraphs from "@/components/DashboardGraphs";
 import SummaryCard from "@/components/SummaryCard";
-import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
-import toast, { Toaster } from "react-hot-toast";
-import { getUserId } from "@/utils/decodeToken";
-
-/* ================= TYPES ================= */
-
-interface CSRPerformance {
-    csrId: string;
-    name: string;
-    totalLeads: number;
-    totalSales: number;
-    conversionRate: string;
-}
-
-interface Lead {
-    _id: string;
-    name: string;
-    phone: string;
-    course: string;
-    status?: string;
-    assignedTo?: { _id: string; name: string } | null;
-}
-
-interface StatsData {
-    totalLeads: number;
-    totalSales: number;
-    totalCSRs: number;
-    conversionRate: string;
-    leadsStats: { day: number; week: number; month: number };
-    salesStats: { day: number; week: number; month: number };
-    csrPerformance: CSRPerformance[];
-}
-
-/* ================= COMPONENT ================= */
 
 export default function AdminDashboardPage() {
-    const [data, setData] = useState<StatsData | null>(null);
-    const [leads, setLeads] = useState<Lead[]>([]);
-    const [sales, setSales] = useState<Lead[]>([]);
+    // Data States
+    const [data, setData] = useState<any>(null);
+    const [leads, setLeads] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<"day" | "week" | "month">("day");
+
+    // Action States
     const [uploading, setUploading] = useState(false);
-
-    /* ================= CSR MODAL ================= */
-    const [showCSRModal, setShowCSRModal] = useState(false);
-    const [csrName, setCsrName] = useState("");
-    const [csrEmail, setCsrEmail] = useState("");
-    const [csrPassword, setCsrPassword] = useState("");
     const [csrLoading, setCsrLoading] = useState(false);
+    const [showCSRModal, setShowCSRModal] = useState(false);
+    const [showExcelPreview, setShowExcelPreview] = useState(false);
 
-    /* ================= LEAD MODAL ================= */
-    const [showLeadModal, setShowLeadModal] = useState(false);
-    const [leadName, setLeadName] = useState("");
-    const [leadPhone, setLeadPhone] = useState("");
-    const [leadCourse, setLeadCourse] = useState("");
-    const [assignedCSR, setAssignedCSR] = useState<string | null>(null);
-    const [leadIdEditing, setLeadIdEditing] = useState<string | null>(null);
+    // Form & Selection States
+    const [csrForm, setCsrForm] = useState({ name: "", email: "", password: "" });
     const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
+    const [previewLeads, setPreviewLeads] = useState<any[]>([]);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+    /* ================= DYNAMIC FILTERING LOGIC ================= */
+    // Yeh logic leads ko filter karega based on Day, Week, Month
+    const filteredLeadsByTime = useMemo(() => {
+        if (!leads.length) return [];
+
+        const now = new Date();
+        return leads.filter((lead) => {
+            const leadDate = new Date(lead.createdAt || Date.now());
+            const diffInTime = now.getTime() - leadDate.getTime();
+            const diffInDays = diffInTime / (1000 * 3600 * 24);
+
+            if (filter === "day") return diffInDays <= 1;
+            if (filter === "week") return diffInDays <= 7;
+            if (filter === "month") return diffInDays <= 30;
+            return true;
+        });
+    }, [leads, filter]);
 
     /* ================= FETCH DATA ================= */
-    const fetchStats = async () => {
-        setLoading(true);
+    const fetchDashboardData = useCallback(async (showSilent = false) => {
+        if (!showSilent) setLoading(true);
         try {
             const [statsRes, leadsRes] = await Promise.all([
                 getAdminStats(filter),
                 getLeadsByRole("admin"),
             ]);
 
-            const activeLeads = leadsRes.filter((l: Lead) => l.status !== "sale");
-            const convertedSales = leadsRes.filter((l: Lead) => l.status === "sale");
+            // Filter out leads that are already converted/sale
+            const activeLeads = (leadsRes || []).filter(
+                (l: any) => l.status !== "sale" && l.status !== "converted"
+            );
 
-            setData({
-                totalLeads: statsRes.totalLeads || 0,
-                totalSales: statsRes.totalSales || 0,
-                totalCSRs: statsRes.totalCSRs || 0,
-                conversionRate: statsRes.conversionRate || "0%",
-                leadsStats: statsRes.leadsStats,
-                salesStats: statsRes.salesStats,
-                csrPerformance: statsRes.csrPerformance || [],
-            });
-
-            setLeads(activeLeads || []);
-            setSales(convertedSales || []);
+            setData(statsRes);
+            setLeads(activeLeads);
+            setError("");
         } catch (err: any) {
-            console.error(err);
-            setError("Failed to load dashboard");
+            console.error("Dashboard Fetch Error:", err);
+            setError(err.message || "Failed to load dashboard data");
         } finally {
             setLoading(false);
         }
-    };
-
-    useEffect(() => {
-        fetchStats();
     }, [filter]);
 
-    const csrOptions = data?.csrPerformance || [];
+    useEffect(() => {
+        fetchDashboardData();
+    }, [fetchDashboardData]);
 
-    /* ================= CREATE CSR ================= */
+    /* ================= ACTIONS ================= */
+
+    const handleDataRefresh = async () => {
+        await fetchDashboardData(true); // Silent refresh for smoother UI
+    };
+
+    const handleLogout = () => {
+        localStorage.clear();
+        window.location.href = "/login";
+    };
+
     const handleCreateCSR = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        if (!csrName || !csrEmail || !csrPassword) {
-            return toast.error("All fields are required");
-        }
-
         setCsrLoading(true);
         try {
-            await createCSR({
-                name: csrName,
-                email: csrEmail,
-                password: csrPassword,
-            });
-
-            toast.success("CSR created successfully");
-
-            setCsrName("");
-            setCsrEmail("");
-            setCsrPassword("");
+            await createCSR(csrForm);
+            toast.success("CSR account created!");
+            setCsrForm({ name: "", email: "", password: "" });
             setShowCSRModal(false);
-
-            fetchStats(); // refresh dashboard
+            fetchDashboardData();
         } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.msg || "Failed to create CSR");
+            toast.error(err.message || "Could not create CSR");
         } finally {
             setCsrLoading(false);
         }
     };
 
+    const handleExcelSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-    /* ================= CREATE / UPDATE LEAD ================= */
-    const handleLeadSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!leadName || !leadPhone || !leadCourse) return toast.error("All fields required");
+        setSelectedFile(file);
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: "binary" });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
 
-        const userId = await getUserId();
-        if (!userId) return toast.error("User not authenticated");
+                if (rawJson.length === 0) throw new Error("File is empty");
 
-        const payload: LeadPayload = {
-            name: leadName,
-            phone: leadPhone,
-            course: leadCourse,
-            assignedTo: assignedCSR || undefined,
-            createdBy: userId,
+                const headers = Object.keys(rawJson[0]);
+                const mapped = rawJson.slice(0, 10).map((row, idx) => {
+                    const nameKey = headers.find(h => h.toLowerCase().includes("name")) || "";
+                    const phoneKey = headers.find(h => h.toLowerCase().includes("phone")) || "";
+                    const courseKey = headers.find(h => h.toLowerCase().includes("course")) || "";
+
+                    return {
+                        name: row[nameKey] || "No Name",
+                        phone: String(row[phoneKey] || "").trim(),
+                        course: row[courseKey] || "N/A",
+                        source: "Excel Import",
+                        rowIndex: idx + 2
+                    };
+                });
+
+                setPreviewLeads(mapped);
+                setShowExcelPreview(true);
+            } catch (err: any) {
+                toast.error(err.message || "Invalid Excel format");
+            }
         };
-
-        try {
-            if (leadIdEditing) {
-                await updateLead(leadIdEditing, payload);
-                setLeads(prev =>
-                    prev.map(l =>
-                        l._id === leadIdEditing
-                            ? {
-                                ...l,
-                                name: payload.name,
-                                phone: payload.phone,
-                                course: payload.course,
-                                assignedTo: payload.assignedTo
-                                    ? { _id: payload.assignedTo, name: l.assignedTo?.name || "" }
-                                    : null,
-                            }
-                            : l
-                    )
-                );
-
-                toast.success("Lead updated successfully");
-            } else {
-                const newLead = await createLead(payload);
-                setLeads(prev => [...prev, newLead]);
-                toast.success("Lead created successfully");
-            }
-
-            setShowLeadModal(false);
-            setLeadIdEditing(null);
-            setLeadName("");
-            setLeadPhone("");
-            setLeadCourse("");
-            setAssignedCSR(null);
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Failed to save lead");
-        }
+        reader.readAsBinaryString(file);
+        e.target.value = "";
     };
 
-    /* ================= DELETE LEAD ================= */
-    const handleDeleteLead = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this lead?")) return;
-        try {
-            await deleteLead(id);
-            setLeads(prev => prev.filter(l => l._id !== id));
-            setSales(prev => prev.filter(l => l._id !== id));
-            toast.success("Lead deleted successfully");
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Delete failed");
-        }
-    };
-
-    /* ================= CONVERT TO SALE ================= */
-    const handleConvertLeadToSale = async (leadId: string) => {
-        const amountStr = prompt("Enter sale amount:");
-        const amount = amountStr ? Number(amountStr) : 0;
-        if (!amount || amount <= 0) return toast.error("Invalid sale amount");
-
-        try {
-            await convertLeadToSale(leadId, amount);
-
-            // Move lead from leads to sales
-            setLeads(prev => prev.filter(l => l._id !== leadId));
-            const convertedLead = leads.find(l => l._id === leadId);
-            if (convertedLead) {
-                setSales(prev => [...prev, { ...convertedLead, status: "sale" }]);
-            }
-
-            // Update stats locally
-            setData(prev =>
-                prev
-                    ? {
-                        ...prev,
-                        totalSales: prev.totalSales + 1,
-                        conversionRate: `${(((prev.totalSales + 1) / prev.totalLeads) * 100).toFixed(2)}%`,
-                        salesStats: {
-                            day: prev.salesStats.day + 1,
-                            week: prev.salesStats.week + 1,
-                            month: prev.salesStats.month + 1,
-                        },
-                    }
-                    : prev
-            );
-
-            toast.success("Lead converted to sale successfully");
-        } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Conversion failed");
-        }
-    };
-
-    /* ================= EXCEL UPLOAD ================= */
-    const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files?.length) return;
+    const confirmExcelUpload = async () => {
+        if (!selectedFile) return;
         setUploading(true);
         try {
-            await uploadExcelLeads(e.target.files[0]);
-            toast.success("Excel uploaded successfully");
-            fetchStats();
+            const invalidRow = previewLeads.find(l => !l.phone || l.phone.length < 5);
+            if (invalidRow) throw new Error(`Invalid phone number near row ${invalidRow.rowIndex}`);
+
+            await bulkInsertLeads(selectedFile);
+            toast.success("Leads imported successfully!");
+            setShowExcelPreview(false);
+            setSelectedFile(null);
+            fetchDashboardData();
         } catch (err: any) {
-            console.error(err);
-            toast.error(err?.response?.data?.message || "Excel upload failed");
+            toast.error(err.response?.data?.message || err.message || "Server Error");
         } finally {
             setUploading(false);
-            e.target.value = "";
         }
     };
 
-    if (loading) return <Loading />;
+    if (loading && !data) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
 
     return (
-        <div className="p-6 space-y-6">
-            <Toaster position="top-right" reverseOrder={false} />
+        <div className="p-4 md:p-8 space-y-8 bg-[#F8FAFC] min-h-screen text-slate-900 font-sans overflow-hidden">
+            <Toaster position="top-right" />
 
-            {/* HEADER */}
-            <div className="flex justify-between items-center mb-4">
-                <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-                <div className="flex space-x-2">
-                    <button
-                        onClick={() => setShowCSRModal(true)}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition"
-                    >
-                        + Create CSR
-                    </button>
-                    <label className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded cursor-pointer transition">
-                        {uploading ? "Uploading..." : "Upload Excel"}
-                        <input type="file" hidden onChange={handleExcelUpload} />
+            {/* --- HEADER --- */}
+            <motion.header
+                initial={{ y: -20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200/60 gap-4"
+            >
+                <div className="text-center md:text-left">
+                    <h1 className="text-3xl font-black tracking-tight text-slate-800">
+                        Admin <span className="text-indigo-600 italic">Central</span>
+                    </h1>
+                    <p className="text-slate-400 text-sm font-medium italic uppercase tracking-wider">
+                        Monitoring {filter}ly performance
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-3">
+                    <button onClick={() => setShowCSRModal(true)} className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-lg">+ Create CSR</button>
+                    <label className={`bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold text-sm cursor-pointer shadow-lg active:scale-95 transition-all ${uploading ? 'opacity-50' : 'hover:bg-indigo-700'}`}>
+                        {uploading ? "Importing..." : "Bulk Import"}
+                        <input type="file" hidden accept=".xlsx, .xls" disabled={uploading} onChange={handleExcelSelection} />
                     </label>
+                    <button onClick={handleLogout} className="bg-rose-50 text-rose-600 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-rose-100 transition-all">Logout</button>
                 </div>
-            </div>
+            </motion.header>
 
-            {/* CREATE CSR MODAL */}
-            {showCSRModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-                    <div className="bg-white p-6 rounded w-96 shadow-lg">
-                        <h2 className="text-xl font-semibold mb-4">Create CSR</h2>
-                        <form onSubmit={handleCreateCSR} className="space-y-3">
-                            <input
-                                value={csrName}
-                                onChange={e => setCsrName(e.target.value)}
-                                placeholder="Name"
-                                required
-                                className="border p-2 w-full rounded"
-                            />
-                            <input
-                                value={csrEmail}
-                                onChange={e => setCsrEmail(e.target.value)}
-                                placeholder="Email"
-                                type="email"
-                                required
-                                className="border p-2 w-full rounded"
-                            />
-                            <input
-                                value={csrPassword}
-                                onChange={e => setCsrPassword(e.target.value)}
-                                placeholder="Password"
-                                type="password"
-                                required
-                                className="border p-2 w-full rounded"
-                            />
-                            <div className="flex justify-end space-x-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCSRModal(false)}
-                                    className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={csrLoading}
-                                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition"
-                                >
-                                    {csrLoading ? "Creating..." : "Create"}
-                                </button>
+            {/* --- STATS GRID --- */}
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
+            >
+                <SummaryCard title="Active Leads" value={filteredLeadsByTime.length} trend="+12%" />
+                <SummaryCard title="Total Sales" value={data?.totalSales || 0} color="green" />
+                <SummaryCard title="Team Size" value={data?.totalCSRs || 0} color="blue" />
+                <SummaryCard title="Conversion" value={data?.conversionRate || "0%"} color="purple" />
+            </motion.div>
+
+            {/* --- MAIN CONTENT --- */}
+            <main className="grid grid-cols-12 gap-8">
+                {/* Sidebar */}
+                <aside className="col-span-12 lg:col-span-3">
+                    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="sticky top-8">
+                        <CSRSidebar
+                            csrs={data?.csrPerformance || []}
+                            selectedCSR={selectedCSR}
+                            onSelect={setSelectedCSR}
+                        />
+                    </motion.div>
+                </aside>
+
+                {/* Main Panel */}
+                <section className="col-span-12 lg:col-span-9 space-y-8">
+                    {/* LEADS PANEL - SYNCED WITH FILTER */}
+                    <motion.div
+                        key={filter} // Forces animation when filter changes
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[500px]"
+                    >
+                        <CSRLeadsPanel
+                            leads={filteredLeadsByTime} // Here is the magic
+                            selectedCSR={selectedCSR}
+                            onConvertToSale={handleDataRefresh}
+                            onDeleteLead={handleDataRefresh}
+                        />
+                    </motion.div>
+
+                    {/* GRAPHS PANEL */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm"
+                    >
+                        <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+                            <h3 className="text-xl font-black text-slate-800 tracking-tight">Analytics Overview</h3>
+                            <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
+                                {["day", "week", "month"].map((f) => (
+                                    <button
+                                        key={f}
+                                        onClick={() => setFilter(f as any)}
+                                        className={`px-6 py-2 rounded-xl text-xs font-black capitalize transition-all duration-300 ${filter === f ? "bg-white text-indigo-600 shadow-sm scale-105" : "text-slate-400 hover:text-slate-600"}`}
+                                    >
+                                        {f}
+                                    </button>
+                                ))}
                             </div>
-                        </form>
+                        </div>
+                        <div className="h-[400px]">
+                            {data?.leadsStats && (
+                                <DashboardGraphs
+                                    leadsStats={data.leadsStats}
+                                    salesStats={data.salesStats}
+                                    filter={filter}
+                                    setFilter={setFilter}
+                                />
+                            )}
+                        </div>
+                    </motion.div>
+                </section>
+            </main>
+
+            {/* --- MODALS --- */}
+            <AnimatePresence>
+                {showExcelPreview && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[60] p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl p-10 flex flex-col border border-slate-100"
+                        >
+                            <h2 className="text-2xl font-black text-slate-800">Review Import</h2>
+                            <div className="flex-1 max-h-[400px] overflow-y-auto border border-slate-100 rounded-3xl my-6 custom-scrollbar">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-400 text-[10px] font-bold sticky top-0 uppercase">
+                                        <tr><th className="p-4">Name</th><th className="p-4">Phone</th><th className="p-4">Course</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {previewLeads.map((l, i) => (
+                                            <tr key={i} className="border-t border-slate-50">
+                                                <td className="p-4 font-semibold">{l.name}</td>
+                                                <td className="p-4 text-indigo-500 font-mono">{l.phone}</td>
+                                                <td className="p-4">{l.course}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="flex gap-4">
+                                <button onClick={() => setShowExcelPreview(false)} className="flex-1 font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
+                                <button onClick={confirmExcelUpload} disabled={uploading} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all">{uploading ? "Importing..." : "Confirm & Import"}</button>
+                            </div>
+                        </motion.div>
                     </div>
-                </div>
-            )}
+                )}
 
-            <div className="grid grid-cols-12 gap-6 mt-6">
-
-                <div className="col-span-3">
-                    <CSRSidebar
-                        csrs={data?.csrPerformance || []}
-                        selectedCSR={selectedCSR}
-                        onSelect={setSelectedCSR}
-                    />
-                </div>
-
-                <div className="col-span-9">
-                    <CSRLeadsPanel
-                        leads={leads}
-                        selectedCSR={selectedCSR}
-                        onConvertToSale={handleConvertLeadToSale}
-                        onDeleteLead={handleDeleteLead}
-                    />
-                </div>
-
-            </div>
-
-            {/* SUMMARY CARDS */}
-            <div className="grid grid-cols-4 gap-4 mt-4">
-                <SummaryCard title="Total Leads" value={data?.totalLeads || 0} />
-                <SummaryCard title="Total Sales" value={data?.totalSales || 0} />
-                <SummaryCard title="Total CSRs" value={data?.totalCSRs || 0} />
-                <SummaryCard title="Conversion Rate" value={data?.conversionRate || "0%"} />
-            </div>
-
-            {/* CHARTS */}
-            <div className="grid grid-cols-2 gap-6 mt-6">
-                <CSRStatsChart title="Leads" {...data!.leadsStats} />
-                <CSRStatsChart title="Sales" {...data!.salesStats} />
-            </div>
-        </div >
-
-
-
+                {showCSRModal && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[60] p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white p-10 rounded-[3rem] w-full max-w-md shadow-2xl"
+                        >
+                            <h2 className="text-2xl font-black text-slate-800 mb-6">New Team Member</h2>
+                            <form onSubmit={handleCreateCSR} className="space-y-4">
+                                <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-600 transition-all" placeholder="Full Name" value={csrForm.name} onChange={e => setCsrForm({ ...csrForm, name: e.target.value })} required />
+                                <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-600 transition-all" type="email" placeholder="Email" value={csrForm.email} onChange={e => setCsrForm({ ...csrForm, email: e.target.value })} required />
+                                <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none border-2 border-transparent focus:border-indigo-600 transition-all" type="password" placeholder="Password" value={csrForm.password} onChange={e => setCsrForm({ ...csrForm, password: e.target.value })} required minLength={6} />
+                                <div className="flex gap-4 pt-4">
+                                    <button type="button" onClick={() => setShowCSRModal(false)} className="flex-1 font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
+                                    <button type="submit" disabled={csrLoading} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-all">{csrLoading ? "Creating..." : "Save Member"}</button>
+                                </div>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+        </div>
     );
-
 }
