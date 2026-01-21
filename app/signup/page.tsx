@@ -1,115 +1,143 @@
 "use client";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import http from "@/services/http";
+import { motion } from "framer-motion";
+import { Toaster, toast } from "react-hot-toast";
+import { FiUser, FiMail, FiLock, FiUserPlus, FiArrowLeft } from "react-icons/fi";
 
 export default function SignupPage() {
     const router = useRouter();
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [success, setSuccess] = useState("");
     const [loading, setLoading] = useState(false);
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError("");
-        setSuccess("");
         setLoading(true);
 
         try {
-            // Backend route for first admin signup
+            // First Admin Setup Route
             const res = await http.post("/setup/first-admin", { name, email, password });
             const { user } = res.data;
 
-            setSuccess(`Admin ${user.name} registered successfully! Redirecting to login...`);
-            setName("");
-            setEmail("");
-            setPassword("");
+            toast.success(`Admin ${user.name} created! Redirecting...`, {
+                duration: 3000,
+                icon: '🚀',
+            });
 
-            setTimeout(() => router.push("/login"), 1500);
+            setTimeout(() => router.push("/login"), 2000);
         } catch (err: any) {
-            setError(err.response?.data?.msg || err.message || "Something went wrong");
+            toast.error(err.response?.data?.msg || "Signup failed. Try again.");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-500 via-pink-500 to-red-400 px-4">
-            <form
-                onSubmit={handleSignup}
-                className="bg-white/90 backdrop-blur-md p-10 rounded-3xl shadow-2xl max-w-md w-full flex flex-col gap-5"
+        <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4 font-sans relative overflow-hidden">
+            <Toaster position="top-center" />
+
+            {/* Background Decorative Elements */}
+            <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-indigo-100 rounded-full blur-[120px] opacity-50" />
+            <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-100 rounded-full blur-[120px] opacity-50" />
+
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative w-full max-w-lg"
             >
-                <h1 className="text-3xl font-extrabold text-center text-gray-900 mb-2">Admin Signup</h1>
-
-                {error && <p className="text-red-600 text-center font-medium animate-pulse">{error}</p>}
-                {success && <p className="text-green-600 text-center font-medium animate-pulse">{success}</p>}
-
-                <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    className="border border-gray-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
-                />
-
-                <input
-                    type="email"
-                    placeholder="Email Address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="border border-gray-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
-                />
-
-                <input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="border border-gray-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
-                />
-
+                {/* Back to Login Button */}
                 <button
-                    type="submit"
-                    disabled={loading}
-                    className={`py-3 rounded-xl font-semibold text-white transition-all duration-300 
-                        ${loading
-                            ? "bg-gray-400 cursor-not-allowed"
-                            : "bg-purple-600 hover:bg-purple-700 active:scale-95"
-                        }`}
+                    onClick={() => router.push("/login")}
+                    className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 font-bold mb-6 transition-colors group"
                 >
-                    {loading ? (
-                        <div className="flex items-center justify-center gap-2">
-                            <span className="loader ease-linear rounded-full border-2 border-t-2 border-white w-5 h-5 animate-spin"></span>
-                            Signing Up...
-                        </div>
-                    ) : (
-                        "Signup"
-                    )}
+                    <FiArrowLeft className="group-hover:-translate-x-1 transition-transform" /> Back to Login
                 </button>
 
-                <p className="text-sm text-gray-600 text-center mt-3">
-                    Already have an account?{" "}
-                    <span
-                        className="text-purple-600 font-semibold cursor-pointer hover:underline"
-                        onClick={() => router.push("/login")}
-                    >
-                        Login
-                    </span>
-                </p>
-            </form>
+                <div className="bg-white/80 backdrop-blur-2xl p-10 rounded-[3rem] shadow-2xl shadow-indigo-100 border border-white">
+                    <div className="text-center mb-10">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-200 mb-4">
+                            <FiUserPlus className="text-white text-3xl" />
+                        </div>
+                        <h1 className="text-4xl font-black text-slate-800 tracking-tight">
+                            Admin <span className="text-indigo-600">Signup</span>
+                        </h1>
+                        <p className="text-slate-500 font-medium mt-2">Initialize the primary administrator account</p>
+                    </div>
 
-            {/* Loader CSS */}
-            <style jsx>{`
-                .loader {
-                    border-top-color: transparent;
-                }
-            `}</style>
+                    <form onSubmit={handleSignup} className="space-y-6">
+                        {/* Name Field */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Full Name</label>
+                            <div className="relative">
+                                <FiUser className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="John Doe"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    required
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-4 pl-12 rounded-2xl outline-none focus:border-indigo-600 focus:bg-white transition-all font-semibold"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Email Field */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Email Address</label>
+                            <div className="relative">
+                                <FiMail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="email"
+                                    placeholder="admin@system.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-4 pl-12 rounded-2xl outline-none focus:border-indigo-600 focus:bg-white transition-all font-semibold"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Password Field */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Password</label>
+                            <div className="relative">
+                                <FiLock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-4 pl-12 rounded-2xl outline-none focus:border-indigo-600 focus:bg-white transition-all font-semibold"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Signup Button */}
+                        <motion.button
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.99 }}
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-slate-900 hover:bg-black text-white p-5 rounded-2xl font-black shadow-xl transition-all disabled:opacity-70 flex items-center justify-center gap-3"
+                        >
+                            {loading ? (
+                                <div className="w-6 h-6 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                "Create Admin Account"
+                            )}
+                        </motion.button>
+                    </form>
+
+                    <p className="text-center mt-8 text-slate-400 text-sm font-medium">
+                        This action will create a permanent root administrator.
+                    </p>
+                </div>
+            </motion.div>
         </div>
     );
 }
