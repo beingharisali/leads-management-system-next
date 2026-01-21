@@ -12,37 +12,61 @@ export interface AuthResponse {
   token: string;
 }
 
-// ===== FIRST ADMIN SIGNUP =====
+/**
+ * First Admin Signup
+ * No token required for initial setup
+ */
 export const firstAdminSignup = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
   try {
     const res = await http.post("/auth/first-admin-signup", data);
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || "Admin signup failed");
+    const errorMsg = err.response?.data?.msg || err.response?.data?.message || "Admin signup failed";
+    throw new Error(errorMsg);
   }
 };
 
-// ===== LOGIN =====
+/**
+ * Login
+ * Authenticates user and returns credentials
+ */
 export const login = async (email: string, password: string): Promise<AuthResponse> => {
   try {
     const res = await http.post("/auth/login", { email, password });
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || "Login failed");
+    const errorMsg = err.response?.data?.msg || err.response?.data?.message || "Login failed";
+    throw new Error(errorMsg);
   }
 };
 
-// ===== CREATE CSR (Admin only) =====
+/**
+ * Create CSR (Admin Protected)
+ * Requires valid Admin Token in Headers
+ */
 export const createCSR = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
-  const token = localStorage.getItem("token"); // Admin token
-  if (!token) throw new Error("Admin not authenticated");
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+  if (!token) {
+    throw new Error("Authentication token missing. Please login as Admin.");
+  }
 
   try {
     const res = await http.post("/auth/register", data, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        // Space after 'Bearer' is crucial
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
     });
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || "CSR creation failed");
+    // 401 Error usually comes from here
+    const errorMsg =
+      err.response?.data?.msg ||
+      err.response?.data?.message ||
+      "Unauthorized: Only admins can create CSR accounts";
+
+    throw new Error(errorMsg);
   }
 };
