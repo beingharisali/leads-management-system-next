@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
-import { FiPlus, FiUploadCloud, FiLogOut, FiTrendingUp, FiRefreshCw, FiGrid } from "react-icons/fi";
+import { FiPlus, FiUploadCloud, FiLogOut, FiTrendingUp, FiRefreshCw, FiUserCheck } from "react-icons/fi";
 
 // APIs
 import { getAdminStats } from "@/services/dashboard.api";
@@ -39,6 +39,7 @@ export default function AdminDashboardPage() {
     const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
     const [previewLeads, setPreviewLeads] = useState<any[]>([]);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [assignToCSR, setAssignToCSR] = useState<string>("");
 
     /* ================= DYNAMIC FILTERING LOGIC ================= */
     const filteredLeadsByTime = useMemo(() => {
@@ -75,6 +76,8 @@ export default function AdminDashboardPage() {
                 getAdminStats(filter),
                 getLeadsByRole("admin"),
             ]);
+
+            console.log("Full Stats Response:", statsRes);
             setData(statsRes);
             setLeads(leadsRes || []);
             setError("");
@@ -133,7 +136,7 @@ export default function AdminDashboardPage() {
                 if (rawJson.length === 0) throw new Error("File is empty");
 
                 const headers = Object.keys(rawJson[0]);
-                const mapped = rawJson.slice(0, 10).map((row, idx) => {
+                const mapped = rawJson.slice(0, 10).map((row) => {
                     const nameKey = headers.find(h => h.toLowerCase().includes("name")) || "";
                     const phoneKey = headers.find(h => h.toLowerCase().includes("phone")) || "";
                     const courseKey = headers.find(h => h.toLowerCase().includes("course")) || "";
@@ -142,7 +145,6 @@ export default function AdminDashboardPage() {
                         phone: String(row[phoneKey] || "").trim(),
                         course: row[courseKey] || "N/A",
                         source: "Excel Import",
-                        rowIndex: idx + 2
                     };
                 });
                 setPreviewLeads(mapped);
@@ -156,17 +158,30 @@ export default function AdminDashboardPage() {
     };
 
     const confirmExcelUpload = async () => {
-        if (!selectedFile) return;
+        if (!selectedFile) {
+            toast.error("Please select a file first");
+            return;
+        }
+
+        if (!assignToCSR || assignToCSR === "") {
+            toast.error("Please select a CSR from the dropdown.");
+            return;
+        }
+
         setUploading(true);
-        const toastId = toast.loading("Uploading leads...");
+        const toastId = toast.loading("Uploading & Assigning leads...");
+
         try {
-            await bulkInsertLeads(selectedFile);
+            console.log("PROCESSED CSR ID FOR API:", assignToCSR);
+            await bulkInsertLeads(selectedFile, assignToCSR);
+
             toast.success("Leads imported successfully!", { id: toastId });
             setShowExcelPreview(false);
             setSelectedFile(null);
+            setAssignToCSR("");
             fetchDashboardData(true);
         } catch (err: any) {
-            toast.error(err.response?.data?.message || err.message || "Server Error", { id: toastId });
+            toast.error(err.message || "Upload failed", { id: toastId });
         } finally {
             setUploading(false);
         }
@@ -217,7 +232,7 @@ export default function AdminDashboardPage() {
                 <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200/60 w-fit">
                     {["day", "week", "month"].map((f) => (
                         <button
-                            key={f}
+                            key={`filter-period-${f}`}
                             onClick={() => setFilter(f as any)}
                             className={`px-8 py-2.5 rounded-xl text-xs font-black capitalize transition-all duration-300 ${filter === f ? "bg-indigo-600 text-white shadow-md scale-105" : "text-slate-400 hover:text-slate-600"}`}
                         >
@@ -227,16 +242,15 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
-                    <SummaryCard title="Total Leads" value={filteredLeadsByTime.length.toString()} trend="Live" color="purple" />
-                    <SummaryCard title="Closed Sales" value={(data?.totalSales || data?.convertedLeads || 0).toString()} color="green" />
-                    <SummaryCard title="Revenue" value={formatCurrency(data?.totalRevenue || data?.revenue || 0)} color="blue" trend={data?.totalRevenue > 0 ? "Profit" : "Awaiting"} />
-                    <SummaryCard title="Conv. Rate" value={`${data?.conversionRate || 0}%`} color="orange" />
+                    <SummaryCard title="Total Leads" value={(data?.totalLeads || 0).toString()} trend="Live" color="purple" />
+                    <SummaryCard title="Closed Sales" value={(data?.totalSales || 0).toString()} color="green" />
+                    <SummaryCard title="Revenue" value={formatCurrency(data?.totalRevenue || 0)} color="blue" trend={data?.totalRevenue > 0 ? "Profit" : "Awaiting"} />
+                    <SummaryCard title="Conv. Rate" value={`${data?.conversionRate || 0}`} color="orange" />
                 </div>
             </div>
 
             {/* --- MAIN CONTENT AREA --- */}
             <main className="grid grid-cols-12 gap-8 items-start">
-                {/* Sidebar Section */}
                 <aside className="col-span-12 lg:col-span-3 lg:sticky lg:top-8">
                     <CSRSidebar
                         csrs={data?.csrPerformance || []}
@@ -245,10 +259,7 @@ export default function AdminDashboardPage() {
                     />
                 </aside>
 
-                {/* Data Sections */}
                 <section className="col-span-12 lg:col-span-9 flex flex-col gap-12">
-
-                    {/* 1. Analytics Section */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -264,19 +275,17 @@ export default function AdminDashboardPage() {
                             </div>
                         </div>
 
-                        {/* Graph Wrapper with Fixed Height to prevent overlap */}
                         <div className="min-h-[400px] w-full">
                             {data?.leadsStats && (
                                 <DashboardGraphs
                                     leadsStats={data.leadsStats}
-                                    salesStats={data.salesStats || data.revenueStats}
+                                    salesStats={data.salesStats}
                                     filter={filter}
                                 />
                             )}
                         </div>
                     </motion.div>
 
-                    {/* 2. Leads Management Section */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -304,9 +313,8 @@ export default function AdminDashboardPage() {
                 </section>
             </main>
 
-            {/* --- MODALS --- */}
+            {/* --- EXCEL PREVIEW MODAL --- */}
             <AnimatePresence>
-                {/* Excel Preview Modal */}
                 {showExcelPreview && (
                     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[100] p-4">
                         <motion.div
@@ -315,17 +323,42 @@ export default function AdminDashboardPage() {
                             exit={{ scale: 0.9, opacity: 0 }}
                             className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl p-8 lg:p-12 flex flex-col border border-slate-100"
                         >
-                            <h2 className="text-2xl font-black text-slate-800">Review Data Preview</h2>
-                            <p className="text-slate-400 font-medium text-sm mt-1">Showing first 10 rows of your file.</p>
+                            <h2 className="text-2xl font-black text-slate-800">Review Data & Assign</h2>
+                            <p className="text-slate-400 font-medium text-sm mt-1">Select a CSR to assign these leads.</p>
 
-                            <div className="flex-1 max-h-[350px] overflow-y-auto border border-slate-100 rounded-3xl my-6 shadow-inner custom-scrollbar">
+                            <div className="mt-6 p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100 flex flex-col gap-3">
+                                <label className="flex items-center gap-2 text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">
+                                    <FiUserCheck /> Assign Leads To:
+                                </label>
+                                <select
+                                    value={assignToCSR}
+                                    onChange={(e) => {
+                                        console.log("Dropdown Value Picked:", e.target.value);
+                                        setAssignToCSR(e.target.value);
+                                    }}
+                                    className="w-full p-4 bg-white rounded-2xl border-2 border-transparent focus:border-indigo-600 outline-none font-bold text-slate-700 transition-all cursor-pointer shadow-sm"
+                                >
+                                    <option value="">Select a CSR Team Member...</option>
+                                    {data?.csrPerformance?.map((csr: any, idx: number) => {
+                                        // CRITICAL FIX: Backend uses 'csrId'
+                                        const actualId = csr.csrId || csr._id;
+                                        return (
+                                            <option key={actualId || idx} value={actualId}>
+                                                {csr.name} ({csr.totalLeads || 0} leads)
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            </div>
+
+                            <div className="flex-1 max-h-[250px] overflow-y-auto border border-slate-100 rounded-3xl my-6 shadow-inner custom-scrollbar">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 text-slate-400 text-[10px] font-bold sticky top-0 uppercase">
                                         <tr><th className="p-5">Name</th><th className="p-5">Phone</th><th className="p-5">Course</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {previewLeads.map((l, i) => (
-                                            <tr key={i} className="hover:bg-slate-50/80 transition-colors">
+                                            <tr key={`excel-row-${i}`} className="hover:bg-slate-50/80 transition-colors">
                                                 <td className="p-5 font-bold text-slate-700">{l.name}</td>
                                                 <td className="p-5 text-indigo-500 font-mono font-medium">{l.phone}</td>
                                                 <td className="p-5 text-slate-500 font-medium">{l.course}</td>
@@ -336,16 +369,20 @@ export default function AdminDashboardPage() {
                             </div>
 
                             <div className="flex gap-4">
-                                <button onClick={() => setShowExcelPreview(false)} className="flex-1 font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
-                                <button onClick={confirmExcelUpload} disabled={uploading} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-all">
-                                    {uploading ? "Importing..." : "Confirm & Import"}
+                                <button onClick={() => { setShowExcelPreview(false); setAssignToCSR(""); }} className="flex-1 font-bold text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
+                                <button
+                                    onClick={confirmExcelUpload}
+                                    disabled={uploading || !assignToCSR}
+                                    className={`flex-[2] py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-all ${uploading || !assignToCSR ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                                >
+                                    {uploading ? "Importing..." : "Confirm & Assign"}
                                 </button>
                             </div>
                         </motion.div>
                     </div>
                 )}
 
-                {/* Create CSR Modal */}
+                {/* --- CSR CREATE MODAL --- */}
                 {showCSRModal && (
                     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[100] p-4">
                         <motion.div
