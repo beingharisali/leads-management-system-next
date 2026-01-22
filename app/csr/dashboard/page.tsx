@@ -111,7 +111,6 @@ export default function CSRDashboard() {
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-                // Map columns dynamically to match our UI preview
                 const mapped = rawJson.slice(0, 10).map((row) => ({
                     name: row.Name || row.name || row.Prospect || "Unknown",
                     phone: String(row.Phone || row.phone || row.Contact || "").trim(),
@@ -125,7 +124,7 @@ export default function CSRDashboard() {
             }
         };
         reader.readAsBinaryString(file);
-        e.target.value = ""; // Reset input
+        e.target.value = "";
     };
 
     const confirmExcelUpload = async () => {
@@ -133,7 +132,13 @@ export default function CSRDashboard() {
         setUploading(true);
         const loadingToast = toast.loading("Processing bulk import...");
         try {
-            await bulkInsertLeads(selectedFile);
+            // ✅ FIX: Fetch userId to pass as second argument
+            const userId = await getUserId();
+            if (!userId) throw new Error("User session not found");
+
+            // ✅ FIX: Passed both 'selectedFile' and 'userId'
+            await bulkInsertLeads(selectedFile, userId);
+
             toast.success("Leads imported successfully! 🚀", { id: loadingToast });
             setShowExcelPreview(false);
             fetchData(true);
@@ -324,7 +329,6 @@ export default function CSRDashboard() {
 
                 {/* MODALS */}
                 <AnimatePresence>
-                    {/* Excel Preview Modal */}
                     {showExcelPreview && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[60] p-6">
                             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[3rem] p-8 w-full max-w-2xl shadow-2xl relative">
@@ -362,7 +366,6 @@ export default function CSRDashboard() {
                         </div>
                     )}
 
-                    {/* Manual Entry Modal */}
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-50 p-6">
                             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[3rem] p-10 w-full max-w-lg shadow-2xl border border-slate-100 relative">

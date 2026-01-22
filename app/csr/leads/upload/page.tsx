@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { uploadExcelLeads, getLeadsByRole, Lead } from "@/services/lead.api";
+// ✅ FIXED: Changed uploadExcelLeads to bulkInsertLeads to match your API export
+import { bulkInsertLeads, getLeadsByRole, Lead } from "@/services/lead.api";
 import { getUserRole, getUserId } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
 
@@ -43,8 +44,8 @@ export default function UploadLeadsPage() {
         setMessage("");
 
         try {
-            // ✅ FIX: Passed both 'file' and 'userId' to satisfy the 2-argument requirement
-            await uploadExcelLeads(file, userId);
+            // ✅ FIXED: Using the correct function name 'bulkInsertLeads'
+            await bulkInsertLeads(file, userId);
 
             setMessageType("success");
             setMessage("✅ Excel uploaded successfully");
@@ -63,7 +64,6 @@ export default function UploadLeadsPage() {
         } finally {
             setLoading(false);
             setFile(null);
-            // Reset file input value manually if needed
             const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
             if (fileInput) fileInput.value = "";
         }
@@ -102,8 +102,8 @@ export default function UploadLeadsPage() {
                             onClick={handleUpload}
                             disabled={loading || !file}
                             className={`w-full py-4 px-4 rounded-2xl font-black transition-all shadow-lg ${loading || !file
-                                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                                    : "bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200"
+                                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                : "bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200"
                                 }`}
                         >
                             {loading ? "Uploading Data..." : "Start Import"}
