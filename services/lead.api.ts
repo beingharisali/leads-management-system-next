@@ -106,7 +106,7 @@ export const convertLeadToSale = async (
 
 /* ===================== EXCEL OPERATIONS ===================== */
 
-export const uploadExcelLeads = async (
+export const bulkInsertLeads = async (
   file: File,
   csrId: string,
 ): Promise<any> => {
