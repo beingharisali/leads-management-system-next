@@ -94,10 +94,10 @@ export default function SummaryCard({
                 {/* Dynamic Trend Badge */}
                 {trend && (
                     <div className={`flex items-center gap-1 px-3 py-1.5 rounded-2xl text-[10px] font-black border transition-all ${isNeutral
-                            ? "bg-slate-50 text-slate-500 border-slate-100"
-                            : isNegative
-                                ? "bg-rose-50 text-rose-600 border-rose-100"
-                                : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                        ? "bg-slate-50 text-slate-500 border-slate-100"
+                        : isNegative
+                            ? "bg-rose-50 text-rose-600 border-rose-100"
+                            : "bg-emerald-50 text-emerald-600 border-emerald-100"
                         }`}>
                         {!isNeutral && (
                             <span className="text-xs">
