@@ -5,6 +5,7 @@ export interface User {
   name: string;
   email: string;
   role: "admin" | "csr";
+  status?: "active" | "inactive"; // Status field add kiya
 }
 
 export interface AuthResponse {
@@ -13,8 +14,20 @@ export interface AuthResponse {
 }
 
 /**
+ * Utility to get token from localStorage
+ */
+const getAuthHeaders = () => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  return {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    }
+  };
+};
+
+/**
  * First Admin Signup
- * No token required for initial setup
  */
 export const firstAdminSignup = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
   try {
@@ -28,7 +41,6 @@ export const firstAdminSignup = async (data: { name: string; email: string; pass
 
 /**
  * Login
- * Authenticates user and returns credentials
  */
 export const login = async (email: string, password: string): Promise<AuthResponse> => {
   try {
@@ -42,31 +54,28 @@ export const login = async (email: string, password: string): Promise<AuthRespon
 
 /**
  * Create CSR (Admin Protected)
- * Requires valid Admin Token in Headers
  */
 export const createCSR = async (data: { name: string; email: string; password: string }): Promise<AuthResponse> => {
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
-  if (!token) {
-    throw new Error("Authentication token missing. Please login as Admin.");
-  }
-
   try {
-    const res = await http.post("/auth/register", data, {
-      headers: {
-        // Space after 'Bearer' is crucial
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-    });
+    const res = await http.post("/auth/register", data, getAuthHeaders());
     return res.data;
   } catch (err: any) {
-    // 401 Error usually comes from here
-    const errorMsg =
-      err.response?.data?.msg ||
-      err.response?.data?.message ||
-      "Unauthorized: Only admins can create CSR accounts";
+    const errorMsg = err.response?.data?.msg || err.response?.data?.message || "Unauthorized: Only admins can create CSR accounts";
+    throw new Error(errorMsg);
+  }
+};
 
+/**
+ * Update CSR Status (Active/Inactive)
+ * Admin can toggle CSR access
+ */
+export const updateCSRStatus = async (csrId: string, status: string): Promise<any> => {
+  try {
+    // Backend endpoint: /auth/update-status/:id
+    const res = await http.patch(`/auth/update-status/${csrId}`, { status }, getAuthHeaders());
+    return res.data;
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.message || "Failed to update CSR status";
     throw new Error(errorMsg);
   }
 };
