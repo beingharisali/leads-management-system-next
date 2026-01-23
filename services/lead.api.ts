@@ -6,7 +6,7 @@ export interface Lead {
   name: string;
   phone: string;
   course: string;
-  status?: "new" | "contacted" | "interested" | "converted" | "rejected";
+  status?: "new" | "contacted" | "interested" | "converted" | "rejected" | "sale";
   source?: string;
   assignedTo?: { _id: string; name: string; email: string } | null;
   createdAt?: string;
@@ -22,7 +22,7 @@ export interface LeadPayload {
   status?: string;
 }
 
-export interface UpdateLeadPayload extends Partial<LeadPayload> {}
+export interface UpdateLeadPayload extends Partial<LeadPayload> { }
 
 interface ApiResponse<T> {
   success: boolean;
@@ -89,6 +89,19 @@ export const deleteLead = async (
   }
 };
 
+/**
+ * Ye naya function saari leads ko delete karne ke liye hai
+ */
+export const deleteAllLeads = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    // Note: Backend par ye endpoint (/delete-all) hona zaroori hai
+    const res = await http.delete<ApiResponse<null>>("/lead/delete-all");
+    return { success: res.data.success, message: res.data.message };
+  } catch (err: any) {
+    throw new Error(err.response?.data?.message || "Failed to delete all leads");
+  }
+};
+
 export const convertLeadToSale = async (
   id: string,
   amount: number = 0,
@@ -112,7 +125,6 @@ export const bulkInsertLeads = async (
 ): Promise<any> => {
   if (!file) throw new Error("Please select an Excel file.");
 
-  // Safety Check: Backend ko ID chahiye, name nahi.
   if (!csrId || csrId.includes(" ")) {
     throw new Error(
       "Invalid Selection: System is capturing Name instead of ID. Please refresh and try again.",
@@ -124,7 +136,6 @@ export const bulkInsertLeads = async (
   formData.append("csrId", csrId);
 
   try {
-    // Axios automatically sets multipart/form-data when sending FormData
     const res = await http.post("/lead/bulk-insert-excel", formData);
     return res.data;
   } catch (err: any) {
