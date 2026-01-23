@@ -22,8 +22,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     FiPlus, FiLogOut, FiEdit2, FiTrash2, FiCheckCircle,
-    FiPhone, FiBookOpen, FiUser, FiDollarSign, FiClock,
-    FiUploadCloud, FiX
+    FiPhone, FiDollarSign, FiClock, FiUploadCloud, FiX
 } from "react-icons/fi";
 
 type Filter = "day" | "week" | "month";
@@ -97,9 +96,7 @@ export default function CSRDashboard() {
         fetchData();
     }, [filter]);
 
-    // ================= DYNAMIC CALCULATIONS (The Fix) =================
-
-    // 1. Leads filter karna based on selected time (Day/Week/Month)
+    // ================= DYNAMIC CALCULATIONS =================
     const filteredLeads = useMemo(() => {
         if (!leads.length) return [];
         const now = new Date();
@@ -113,13 +110,11 @@ export default function CSRDashboard() {
         });
     }, [leads, filter]);
 
-    // 2. Revenue Calculation specifically for this CSR's filtered leads
     const myMetrics = useMemo(() => {
         const salesOnly = filteredLeads.filter(l => l.status === "converted");
         const totalRevenue = salesOnly.reduce((sum, lead) => sum + (lead.saleAmount || 0), 0);
         const count = filteredLeads.length;
         const rate = count > 0 ? ((salesOnly.length / count) * 100).toFixed(1) + "%" : "0%";
-
         return { totalRevenue, salesCount: salesOnly.length, rate };
     }, [filteredLeads]);
 
@@ -175,7 +170,7 @@ export default function CSRDashboard() {
                 const wb = XLSX.read(bstr, { type: "binary" });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-                const mapped = rawJson.slice(0, 10).map((row) => ({
+                const mapped = rawJson.slice(0, 5).map((row) => ({
                     name: row.Name || row.name || row.Prospect || "Unknown",
                     phone: String(row.Phone || row.phone || row.Contact || "").trim(),
                     course: row.Course || row.course || row.Subject || "N/A",
@@ -225,7 +220,7 @@ export default function CSRDashboard() {
                     </button>
                 </div>
 
-                {/* Summary Cards - Updated with 'myMetrics' */}
+                {/* Summary Cards */}
                 <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
                     <SummaryCard title="Active Leads" value={filteredLeads.length} />
                     <SummaryCard title="My Revenue" value={`$${myMetrics.totalRevenue.toLocaleString()}`} />
@@ -292,18 +287,25 @@ export default function CSRDashboard() {
                                             </span>
                                         </td>
                                         <td className="px-8 py-5 text-right">
-                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => { setEditingLead(lead); setLeadForm({ name: lead.name, course: lead.course, phone: lead.phone }); setIsModalOpen(true); }} className="p-2 text-amber-500 hover:bg-amber-50 rounded-lg"><FiEdit2 /></button>
+                                            {/* Buttons visibility fixed: removed opacity-0 */}
+                                            <div className="flex justify-end gap-2">
+                                                <button onClick={() => { setEditingLead(lead); setLeadForm({ name: lead.name, course: lead.course, phone: lead.phone }); setIsModalOpen(true); }} className="p-2 text-amber-500 bg-amber-50/50 hover:bg-amber-100 rounded-lg transition-all shadow-sm">
+                                                    <FiEdit2 />
+                                                </button>
                                                 {lead.status !== 'converted' && (
-                                                    <button onClick={() => handleConvertToSale(lead._id)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg"><FiCheckCircle /></button>
+                                                    <button onClick={() => handleConvertToSale(lead._id)} className="p-2 text-emerald-500 bg-emerald-50/50 hover:bg-emerald-100 rounded-lg transition-all shadow-sm">
+                                                        <FiCheckCircle />
+                                                    </button>
                                                 )}
-                                                <button onClick={() => handleDelete(lead._id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"><FiTrash2 /></button>
+                                                <button onClick={() => handleDelete(lead._id)} className="p-2 text-rose-500 bg-rose-50/50 hover:bg-rose-100 rounded-lg transition-all shadow-sm">
+                                                    <FiTrash2 />
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
                                 )) : (
                                     <tr>
-                                        <td colSpan={5} className="py-20 text-center text-slate-400 font-medium">No leads found for this period.</td>
+                                        <td colSpan={5} className="py-20 text-center text-slate-400 font-medium">No leads found.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -311,8 +313,65 @@ export default function CSRDashboard() {
                     </div>
                 </div>
 
-                {/* Analytics Charts */}
-                <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8">
+                {/* MODALS */}
+                <AnimatePresence>
+                    {/* Manual Entry Modal */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl relative">
+                                <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600"><FiX size={24} /></button>
+                                <h2 className="text-2xl font-black mb-6 text-slate-800">{editingLead ? "Edit Prospect" : "New Prospect"}</h2>
+                                <div className="space-y-4">
+                                    <input type="text" placeholder="Full Name" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} />
+                                    <input type="text" placeholder="Phone Number" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} />
+                                    <input type="text" placeholder="Course Name" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={leadForm.course} onChange={(e) => setLeadForm({ ...leadForm, course: e.target.value })} />
+                                    <button onClick={handleLeadFormSubmit} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all">
+                                        {editingLead ? "Update Lead" : "Create Lead"}
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+
+                    {/* Excel Preview Modal */}
+                    {showExcelPreview && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                            <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-hidden">
+                                <h2 className="text-2xl font-black mb-2">Bulk Import Preview</h2>
+                                <p className="text-slate-500 mb-6 text-sm font-medium">Please review the first 5 records from your file.</p>
+                                <div className="border border-slate-100 rounded-2xl overflow-hidden mb-8">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-slate-50">
+                                            <tr>
+                                                <th className="p-4 font-black">Name</th>
+                                                <th className="p-4 font-black">Phone</th>
+                                                <th className="p-4 font-black">Course</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {previewLeads.map((l, i) => (
+                                                <tr key={i}>
+                                                    <td className="p-4 font-bold text-slate-700">{l.name}</td>
+                                                    <td className="p-4 text-blue-600 font-mono">{l.phone}</td>
+                                                    <td className="p-4 text-slate-500 font-medium">{l.course}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setShowExcelPreview(false)} className="flex-1 py-4 border border-slate-200 rounded-2xl font-bold hover:bg-slate-50 transition-all text-slate-600">Cancel</button>
+                                    <button onClick={confirmExcelUpload} disabled={uploading} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:bg-indigo-300">
+                                        {uploading ? "Importing..." : "Confirm & Upload"}
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Charts */}
+                <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 mt-10">
                     <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
                         <CSRStatsChart title="Leads Generated" day={stats.leadsStats.day} week={stats.leadsStats.week} month={stats.leadsStats.month} />
                     </div>
@@ -321,10 +380,6 @@ export default function CSRDashboard() {
                     </div>
                 </div>
 
-                {/* Modals Logic (Keep as is) */}
-                <AnimatePresence>
-                    {/* ... Excel Preview and Manual Form Modals code remains identical ... */}
-                </AnimatePresence>
             </div>
         </ProtectedRoute>
     );
