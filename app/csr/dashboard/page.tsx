@@ -1,45 +1,46 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import * as XLSX from "xlsx";
-import {
-    getLeadsByRole,
-    deleteLead,
-    convertLeadToSale,
-    createLead,
-    updateLead,
-    bulkInsertLeads,
-} from "@/services/lead.api";
+import { getLeadsByRole, updateLead } from "@/services/lead.api";
 import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
-import ErrorMessage from "@/components/ErrorMessage";
 import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
-    FiPlus, FiLogOut, FiEdit2, FiTrash2, FiCheckCircle,
-    FiPhone, FiDollarSign, FiClock, FiUploadCloud, FiX
+    FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch, FiMessageSquare
 } from "react-icons/fi";
 
-type Filter = "day" | "week" | "month";
+type FilterRange = "day" | "week" | "month" | "custom";
+
+// ✅ Backend Enum ke mutabiq Lowercase Types
+type LeadStatus = "new" | "contacted" | "interested" | "converted" | "sale" | "rejected" | "follow-up" | "paid" | "not pick" | "busy" | "wrong number";
 
 interface Lead {
     _id: string;
     name: string;
     course: string;
     phone: string;
-    status?: "new" | "contacted" | "converted";
+    status: LeadStatus;
+    remarks?: string;
+    followUpDate?: string;
+    createdAt: string;
     saleAmount?: number;
-    createdAt?: string;
 }
 
 export default function CSRDashboard() {
     const router = useRouter();
     const [leads, setLeads] = useState<Lead[]>([]);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [filter, setFilter] = useState<FilterRange>("day");
+    const [loading, setLoading] = useState(true);
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+
     const [stats, setStats] = useState({
         totalLeads: 0,
         totalSales: 0,
@@ -48,338 +49,223 @@ export default function CSRDashboard() {
         salesStats: { day: 0, week: 0, month: 0 },
     });
 
-    const [filter, setFilter] = useState<Filter>("day");
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
+    // ✅ Dashboard ke liye simplified options
+    const statusOptions: LeadStatus[] = ["new", "not pick", "interested", "follow-up", "paid", "rejected", "busy"];
 
-    // Form & Modal States
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingLead, setEditingLead] = useState<Lead | null>(null);
-    const [leadForm, setLeadForm] = useState({ name: "", course: "", phone: "" });
-
-    // Excel States
-    const [uploading, setUploading] = useState(false);
-    const [showExcelPreview, setShowExcelPreview] = useState(false);
-    const [previewLeads, setPreviewLeads] = useState<any[]>([]);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-    // ================= DATA FETCHING =================
-    const fetchData = async (silent = false) => {
+    const fetchData = useCallback(async (isSilent = false) => {
         try {
-            if (!silent) setLoading(true);
-            const role = await getUserRole();
-            const userId = await getUserId();
-            if (!role || !userId) throw new Error("Authentication failed");
+            if (!isSilent) setLoading(true);
+            const [role, userId] = await Promise.all([getUserRole(), getUserId()]);
+            if (!role || !userId) {
+                logout();
+                return router.push("/login");
+            }
 
-            const [leadsRes, statsRes] = await Promise.all([
+            const [leadsRes, statsRes]: [any, any] = await Promise.all([
                 getLeadsByRole(role, userId),
-                getCSRStats(filter),
+                getCSRStats(filter === "custom" ? "month" : filter),
             ]);
 
-            setLeads((leadsRes as Lead[]) || []);
-            setStats({
-                totalLeads: statsRes?.totalLeads ?? 0,
-                totalSales: statsRes?.totalSales ?? 0,
-                conversionRate: statsRes?.conversionRate ?? "0%",
-                leadsStats: statsRes?.leadsStats ?? { day: 0, week: 0, month: 0 },
-                salesStats: statsRes?.salesStats ?? { day: 0, week: 0, month: 0 },
-            });
+            setLeads(Array.isArray(leadsRes) ? (leadsRes as Lead[]) : []);
+            if (statsRes) setStats(statsRes);
         } catch (err: any) {
-            setError(err.message || "Failed to load dashboard");
-            toast.error(err.message);
+            toast.error("Failed to load dashboard data");
         } finally {
             setLoading(false);
         }
+    }, [filter, router]);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handleUpdate = async (id: string, data: Partial<Lead>) => {
+        // ✅ Payload ko hamesha lowercase bhejien backend validation ke liye
+        let updatePayload: any = { ...data };
+        if (data.status) updatePayload.status = data.status.toLowerCase();
+
+        if (updatePayload.status === "paid" || updatePayload.status === "sale") {
+            const amount = prompt("Enter Sale Amount:");
+            if (amount === null) return;
+
+            if (!amount || isNaN(Number(amount))) {
+                toast.error("Valid amount is required for Paid status");
+                return;
+            }
+            updatePayload.saleAmount = Number(amount);
+        }
+
+        const tid = toast.loading("Updating lead...");
+        try {
+            await updateLead(id, updatePayload);
+
+            // ✅ Local State Update
+            setLeads(prev => prev.map(l => l._id === id ? { ...l, ...updatePayload } : l));
+            toast.success("Lead Updated!", { id: tid });
+
+            if (data.status) fetchData(true);
+        } catch (err) {
+            toast.error("Update failed. Check backend console.", { id: tid });
+        }
     };
 
-    useEffect(() => {
-        fetchData();
-    }, [filter]);
-
-    // ================= DYNAMIC CALCULATIONS =================
     const filteredLeads = useMemo(() => {
-        if (!leads.length) return [];
-        const now = new Date();
         return leads.filter((lead) => {
-            const leadDate = new Date(lead.createdAt || Date.now());
-            const diffInDays = (now.getTime() - leadDate.getTime()) / (1000 * 3600 * 24);
+            const matchesSearch = lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || lead.phone.includes(searchTerm);
+            if (!matchesSearch) return false;
+
+            const leadDate = new Date(lead.createdAt).setHours(0, 0, 0, 0);
+            if (filter === "custom" && startDate && endDate) {
+                const start = new Date(startDate).setHours(0, 0, 0, 0);
+                const end = new Date(endDate).setHours(0, 0, 0, 0);
+                return leadDate >= start && leadDate <= end;
+            }
+
+            const diffInDays = (Date.now() - leadDate) / (1000 * 3600 * 24);
             if (filter === "day") return diffInDays <= 1;
             if (filter === "week") return diffInDays <= 7;
             if (filter === "month") return diffInDays <= 30;
             return true;
         });
-    }, [leads, filter]);
+    }, [leads, searchTerm, filter, startDate, endDate]);
 
     const myMetrics = useMemo(() => {
-        const salesOnly = filteredLeads.filter(l => l.status === "converted");
-        const totalRevenue = salesOnly.reduce((sum, lead) => sum + (lead.saleAmount || 0), 0);
-        const count = filteredLeads.length;
-        const rate = count > 0 ? ((salesOnly.length / count) * 100).toFixed(1) + "%" : "0%";
-        return { totalRevenue, salesCount: salesOnly.length, rate };
+        const sales = filteredLeads.filter(l => l.status === "paid" || l.status === "sale");
+        const revenue = sales.reduce((sum, l) => sum + (l.saleAmount || 0), 0);
+        const rate = filteredLeads.length > 0 ? ((sales.length / filteredLeads.length) * 100).toFixed(1) + "%" : "0%";
+        return { revenue, salesCount: sales.length, rate };
     }, [filteredLeads]);
 
-    // ================= ACTIONS =================
-    const handleConvertToSale = async (id: string) => {
-        const inputAmount = prompt("Enter Sale Amount (Numbers only):");
-        const numericAmount = Number(inputAmount);
-        if (!inputAmount || isNaN(numericAmount) || numericAmount <= 0) {
-            return toast.error("Please enter a valid amount");
-        }
-        try {
-            toast.loading("Recording sale...", { id: "convert" });
-            await convertLeadToSale(id, numericAmount);
-            toast.success("Sale Recorded! 🚀", { id: "convert" });
-            fetchData(true);
-        } catch (err) {
-            toast.error("Conversion failed", { id: "convert" });
-        }
-    };
-
-    const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this lead?")) return;
-        try {
-            await deleteLead(id);
-            setLeads(leads.filter(l => l._id !== id));
-            toast.success("Lead removed");
-            fetchData(true);
-        } catch (err) { toast.error("Delete failed"); }
-    };
-
-    const handleLeadFormSubmit = async () => {
-        if (leadForm.name.length < 3 || leadForm.phone.length < 10) {
-            return toast.error("Please fill details correctly");
-        }
-        try {
-            const userId = await getUserId();
-            const payload = { ...leadForm, assignedTo: userId, createdBy: userId, source: "manual" };
-            editingLead ? await updateLead(editingLead._id, payload as any) : await createLead(payload as any);
-            setIsModalOpen(false);
-            fetchData(true);
-            toast.success(editingLead ? "Updated!" : "Lead Created!");
-        } catch (err) { toast.error("Failed to save lead"); }
-    };
-
-    const handleExcelSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setSelectedFile(file);
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            try {
-                const bstr = evt.target?.result;
-                const wb = XLSX.read(bstr, { type: "binary" });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-                const mapped = rawJson.slice(0, 5).map((row) => ({
-                    name: row.Name || row.name || row.Prospect || "Unknown",
-                    phone: String(row.Phone || row.phone || row.Contact || "").trim(),
-                    course: row.Course || row.course || row.Subject || "N/A",
-                }));
-                setPreviewLeads(mapped);
-                setShowExcelPreview(true);
-            } catch (err) { toast.error("Invalid Excel format"); }
-        };
-        reader.readAsBinaryString(file);
-        e.target.value = "";
-    };
-
-    const confirmExcelUpload = async () => {
-        if (!selectedFile) return;
-        setUploading(true);
-        const loadingToast = toast.loading("Processing bulk import...");
-        try {
-            const userId = await getUserId();
-            await bulkInsertLeads(selectedFile, userId!);
-            toast.success("Leads imported successfully!", { id: loadingToast });
-            setShowExcelPreview(false);
-            fetchData(true);
-        } catch (err: any) { toast.error("Upload failed", { id: loadingToast }); }
-        finally { setUploading(false); }
-    };
-
-    const handleLogout = () => { logout(); router.push("/login"); };
-
     if (loading) return <Loading />;
-    if (error) return <ErrorMessage message={error} />;
 
     return (
         <ProtectedRoute role="csr">
-            <Toaster position="top-right" reverseOrder={false} />
-            <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
+            <Toaster position="top-right" />
+            <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10 font-sans">
 
-                {/* Header */}
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
-                    <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
-                        <h1 className="text-4xl font-black text-slate-800 tracking-tight">CSR <span className="text-blue-600">Portal</span></h1>
-                        <p className="text-slate-500 font-medium flex items-center gap-2">
-                            <FiClock className="text-blue-400" /> Performance: <span className="text-blue-600 font-bold capitalize">{filter}</span>
-                        </p>
-                    </motion.div>
-                    <button onClick={handleLogout} className="flex items-center gap-2 bg-white border border-slate-200 px-6 py-2.5 rounded-2xl hover:text-red-600 transition-all font-bold shadow-sm group">
-                        <FiLogOut className="group-hover:rotate-12 transition-transform" /> Logout
-                    </button>
-                </div>
-
-                {/* Summary Cards */}
-                <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                    <SummaryCard title="Active Leads" value={filteredLeads.length} />
-                    <SummaryCard title="My Revenue" value={`$${myMetrics.totalRevenue.toLocaleString()}`} />
-                    <SummaryCard title="Conversion Rate" value={myMetrics.rate} />
-                </div>
-
-                {/* Filter & Action Bar */}
-                <div className="max-w-7xl mx-auto bg-white p-5 rounded-[2rem] shadow-sm border flex flex-wrap justify-between items-center gap-4 mb-10">
-                    <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-                        {["day", "week", "month"].map((f) => (
-                            <button key={f} onClick={() => setFilter(f as Filter)} className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${filter === f ? "bg-white text-blue-600 shadow-md scale-105" : "text-slate-500 hover:text-slate-700"}`}>
-                                {f.toUpperCase()}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="flex gap-3 flex-wrap">
-                        <label className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 cursor-pointer transition-all active:scale-95">
-                            <FiUploadCloud /> {uploading ? "Importing..." : "Bulk Import"}
-                            <input type="file" hidden accept=".xlsx, .xls" onChange={handleExcelSelection} />
-                        </label>
-                        <button onClick={() => { setEditingLead(null); setLeadForm({ name: "", course: "", phone: "" }); setIsModalOpen(true); }} className="flex items-center gap-2 bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold shadow-lg hover:scale-105 transition-all">
-                            <FiPlus /> New Prospect
+                {/* --- Header --- */}
+                <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">CSR Dashboard</h1>
+                    <div className="flex items-center gap-3 w-full md:w-auto">
+                        <div className="relative flex-1 md:w-64">
+                            <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                placeholder="Search leads..."
+                                className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white border-none shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <button onClick={() => logout()} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm hover:bg-rose-50 transition-all">
+                            <FiLogOut size={20} />
                         </button>
                     </div>
                 </div>
 
-                {/* Leads Table */}
-                <div className="max-w-7xl mx-auto bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden mb-10">
+                {/* --- Metrics --- */}
+                <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                    <SummaryCard title="Leads Found" value={filteredLeads.length} icon={<FiPhone />} color="blue" />
+                    <SummaryCard title="Revenue" value={`$${myMetrics.revenue.toLocaleString()}`} icon={<FiDollarSign />} color="green" />
+                    <SummaryCard title="Conv. Rate" value={myMetrics.rate} icon={<FiCheckCircle />} color="purple" />
+                </div>
+
+                {/* --- Filters --- */}
+                <div className="max-w-[1600px] mx-auto flex flex-wrap items-center gap-4 bg-white p-5 rounded-[2rem] shadow-sm mb-8">
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                        {(["day", "week", "month", "custom"] as const).map((t) => (
+                            <button
+                                key={t}
+                                onClick={() => setFilter(t)}
+                                className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${filter === t ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}
+                            >
+                                {t.toUpperCase()}
+                            </button>
+                        ))}
+                    </div>
+
+                    {filter === "custom" && (
+                        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2">
+                            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-slate-50 border-none rounded-lg p-2 text-xs font-bold text-slate-600 outline-none ring-1 ring-slate-200" />
+                            <span className="text-slate-400 text-xs font-bold px-1">TO</span>
+                            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-slate-50 border-none rounded-lg p-2 text-xs font-bold text-slate-600 outline-none ring-1 ring-slate-200" />
+                        </motion.div>
+                    )}
+                </div>
+
+                {/* --- Table --- */}
+                <div className="max-w-[1600px] mx-auto bg-white rounded-[2.5rem] shadow-sm overflow-hidden border border-slate-100">
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50/50 border-b border-slate-100">
-                                <tr className="text-slate-400 uppercase text-[10px] font-black tracking-widest">
-                                    <th className="px-8 py-5">Prospect Details</th>
-                                    <th className="px-8 py-5">Course</th>
-                                    <th className="px-8 py-5 text-center">Sale Value</th>
-                                    <th className="px-8 py-5 text-center">Status</th>
-                                    <th className="px-8 py-5 text-right">Actions</th>
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50/50 text-slate-400 text-[10px] uppercase tracking-widest font-black">
+                                    <th className="px-6 py-6">Date</th>
+                                    <th className="px-6 py-6">Name</th>
+                                    <th className="px-6 py-6">Number</th>
+                                    <th className="px-6 py-6">Course</th>
+                                    <th className="px-6 py-6">Status</th>
+                                    <th className="px-6 py-6">Remarks</th>
+                                    <th className="px-6 py-6">Follow-up</th>
+                                    <th className="px-6 py-6 text-center">Amount</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                                {filteredLeads.length > 0 ? filteredLeads.map((lead) => (
-                                    <tr key={lead._id} className="group hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-8 py-5">
-                                            <div className="font-bold text-slate-700">{lead.name}</div>
-                                            <div className="text-xs text-blue-500 font-mono flex items-center gap-1">
-                                                <FiPhone className="text-[10px]" /> {lead.phone}
+                                {filteredLeads.map((lead) => (
+                                    <tr key={lead._id} className="hover:bg-slate-50/50 transition-all">
+                                        <td className="px-6 py-5 text-xs text-slate-500 font-medium">
+                                            {new Date(lead.createdAt).toLocaleDateString('en-GB')}
+                                        </td>
+                                        <td className="px-6 py-5 font-bold text-slate-800">{lead.name}</td>
+                                        <td className="px-6 py-5 text-sm font-semibold text-blue-600">{lead.phone}</td>
+                                        <td className="px-6 py-5 text-sm text-slate-600 font-medium">{lead.course}</td>
+                                        <td className="px-6 py-5">
+                                            <select
+                                                value={lead.status.toLowerCase()}
+                                                onChange={(e) => handleUpdate(lead._id, { status: e.target.value as LeadStatus })}
+                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 cursor-pointer
+                                                    ${lead.status === 'paid' ? 'bg-green-100 text-green-700' :
+                                                        lead.status === 'interested' ? 'bg-blue-100 text-blue-700' :
+                                                            lead.status === 'not pick' ? 'bg-orange-100 text-orange-700' :
+                                                                'bg-slate-100 text-slate-600'}`}
+                                            >
+                                                {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
+                                            </select>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center gap-2">
+                                                <FiMessageSquare className="text-slate-300" />
+                                                <input
+                                                    defaultValue={lead.remarks}
+                                                    onBlur={(e) => handleUpdate(lead._id, { remarks: e.target.value })}
+                                                    placeholder="Add note..."
+                                                    className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm text-slate-600 w-full transition-all"
+                                                />
                                             </div>
                                         </td>
-                                        <td className="px-8 py-5 text-slate-500 font-medium">{lead.course}</td>
-                                        <td className="px-8 py-5 text-center">
-                                            {lead.status === 'converted' ? (
-                                                <div className="inline-flex items-center px-4 py-1.5 rounded-xl bg-emerald-50 text-emerald-600 font-black text-sm">
-                                                    <FiDollarSign className="mr-0.5" />
-                                                    {lead.saleAmount?.toLocaleString()}
-                                                </div>
-                                            ) : (
-                                                <span className="text-slate-300 font-bold">--</span>
-                                            )}
+                                        <td className="px-6 py-5">
+                                            <input
+                                                type="date"
+                                                defaultValue={lead.followUpDate ? lead.followUpDate.split('T')[0] : ""}
+                                                onChange={(e) => handleUpdate(lead._id, { followUpDate: e.target.value })}
+                                                className="bg-slate-50 border-none text-[11px] font-bold text-slate-500 rounded-lg p-1 outline-none focus:ring-1 focus:ring-blue-400"
+                                            />
                                         </td>
-                                        <td className="px-8 py-5 text-center">
-                                            <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tighter ${lead.status === 'converted' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
-                                                {lead.status || 'new'}
-                                            </span>
-                                        </td>
-                                        <td className="px-8 py-5 text-right">
-                                            {/* Buttons visibility fixed: removed opacity-0 */}
-                                            <div className="flex justify-end gap-2">
-                                                <button onClick={() => { setEditingLead(lead); setLeadForm({ name: lead.name, course: lead.course, phone: lead.phone }); setIsModalOpen(true); }} className="p-2 text-amber-500 bg-amber-50/50 hover:bg-amber-100 rounded-lg transition-all shadow-sm">
-                                                    <FiEdit2 />
-                                                </button>
-                                                {lead.status !== 'converted' && (
-                                                    <button onClick={() => handleConvertToSale(lead._id)} className="p-2 text-emerald-500 bg-emerald-50/50 hover:bg-emerald-100 rounded-lg transition-all shadow-sm">
-                                                        <FiCheckCircle />
-                                                    </button>
-                                                )}
-                                                <button onClick={() => handleDelete(lead._id)} className="p-2 text-rose-500 bg-rose-50/50 hover:bg-rose-100 rounded-lg transition-all shadow-sm">
-                                                    <FiTrash2 />
-                                                </button>
-                                            </div>
+                                        <td className="px-6 py-5 text-center font-bold text-slate-700">
+                                            {lead.saleAmount ? <span className="text-green-600">${lead.saleAmount}</span> : "-"}
                                         </td>
                                     </tr>
-                                )) : (
-                                    <tr>
-                                        <td colSpan={5} className="py-20 text-center text-slate-400 font-medium">No leads found.</td>
-                                    </tr>
-                                )}
+                                ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                {/* MODALS */}
-                <AnimatePresence>
-                    {/* Manual Entry Modal */}
-                    {isModalOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl relative">
-                                <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600"><FiX size={24} /></button>
-                                <h2 className="text-2xl font-black mb-6 text-slate-800">{editingLead ? "Edit Prospect" : "New Prospect"}</h2>
-                                <div className="space-y-4">
-                                    <input type="text" placeholder="Full Name" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} />
-                                    <input type="text" placeholder="Phone Number" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} />
-                                    <input type="text" placeholder="Course Name" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" value={leadForm.course} onChange={(e) => setLeadForm({ ...leadForm, course: e.target.value })} />
-                                    <button onClick={handleLeadFormSubmit} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all">
-                                        {editingLead ? "Update Lead" : "Create Lead"}
-                                    </button>
-                                </div>
-                            </motion.div>
-                        </div>
-                    )}
-
-                    {/* Excel Preview Modal */}
-                    {showExcelPreview && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                            <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white rounded-[2.5rem] p-8 w-full max-w-2xl shadow-2xl overflow-hidden">
-                                <h2 className="text-2xl font-black mb-2">Bulk Import Preview</h2>
-                                <p className="text-slate-500 mb-6 text-sm font-medium">Please review the first 5 records from your file.</p>
-                                <div className="border border-slate-100 rounded-2xl overflow-hidden mb-8">
-                                    <table className="w-full text-left text-sm">
-                                        <thead className="bg-slate-50">
-                                            <tr>
-                                                <th className="p-4 font-black">Name</th>
-                                                <th className="p-4 font-black">Phone</th>
-                                                <th className="p-4 font-black">Course</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {previewLeads.map((l, i) => (
-                                                <tr key={i}>
-                                                    <td className="p-4 font-bold text-slate-700">{l.name}</td>
-                                                    <td className="p-4 text-blue-600 font-mono">{l.phone}</td>
-                                                    <td className="p-4 text-slate-500 font-medium">{l.course}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div className="flex gap-4">
-                                    <button onClick={() => setShowExcelPreview(false)} className="flex-1 py-4 border border-slate-200 rounded-2xl font-bold hover:bg-slate-50 transition-all text-slate-600">Cancel</button>
-                                    <button onClick={confirmExcelUpload} disabled={uploading} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:bg-indigo-300">
-                                        {uploading ? "Importing..." : "Confirm & Upload"}
-                                    </button>
-                                </div>
-                            </motion.div>
-                        </div>
-                    )}
-                </AnimatePresence>
-
-                {/* Charts */}
-                <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 mt-10">
-                    <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
-                        <CSRStatsChart title="Leads Generated" day={stats.leadsStats.day} week={stats.leadsStats.week} month={stats.leadsStats.month} />
+                {/* --- Graphs --- */}
+                <div className="max-w-[1600px] mx-auto grid lg:grid-cols-2 gap-8 mt-10">
+                    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
+                        <CSRStatsChart title="Lead Generation Trend" day={stats.leadsStats.day} week={stats.leadsStats.week} month={stats.leadsStats.month} />
                     </div>
-                    <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
-                        <CSRStatsChart title="Sales Closed" day={stats.salesStats.day} week={stats.salesStats.week} month={stats.salesStats.month} />
+                    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
+                        <CSRStatsChart title="Sales Conversion Trend" day={stats.salesStats.day} week={stats.salesStats.week} month={stats.salesStats.month} />
                     </div>
                 </div>
-
             </div>
         </ProtectedRoute>
     );
