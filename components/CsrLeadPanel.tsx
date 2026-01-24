@@ -38,6 +38,7 @@ export default function CSRLeadsPanel({
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
 
+    // Memoized filtering logic
     const filteredLeads = useMemo(() => {
         return leads.filter((lead) => {
             const searchLower = searchTerm.toLowerCase();
@@ -59,7 +60,7 @@ export default function CSRLeadsPanel({
         });
     }, [leads, selectedCSR, searchTerm]);
 
-    /* ================= ACTIONS ================= */
+    /* ================= ACTIONS WITH OPTIMISTIC UPDATES ================= */
 
     const handleConvert = async (id: string) => {
         const amountStr = prompt("Enter Sale Amount (PKR):");
@@ -71,40 +72,42 @@ export default function CSRLeadsPanel({
             return;
         }
 
+        const toastId = toast.loading("Processing payment...");
         setProcessingId(id);
+
         try {
             await convertLeadToSale(id, amount);
-            toast.success("Payment Recorded Successfully!");
+            toast.success("Payment Recorded Successfully!", { id: toastId });
+
+            // Backend update ke baad parent ko inform karein
             onConvertToSale();
         } catch (err: any) {
-            toast.error(err.message || "Failed to convert lead");
+            toast.error(err.message || "Failed to convert lead", { id: toastId });
         } finally {
             setProcessingId(null);
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this lead?")) return;
+        if (!confirm("Are you sure you want to wipe this lead?")) return;
 
+        const toastId = toast.loading("Deleting lead...");
         setProcessingId(id);
+
         try {
             await deleteLead(id);
-            toast.success("Lead wiped from system");
+            toast.success("Lead wiped from system", { id: toastId });
+
+            // List se nikaalne ke liye parent refresh trigger karein
             onDeleteLead();
         } catch (err: any) {
-            toast.error(err.message || "Failed to delete lead");
+            toast.error(err.message || "Failed to delete lead", { id: toastId });
         } finally {
             setProcessingId(null);
         }
     };
 
     return (
-        /* CHANGES MADE:
-          1. Removed 'h-full' to prevent content overflow issues.
-          2. Added 'min-h-[500px]' for UI stability.
-          3. Added 'relative z-10' so search/tooltips stay on top.
-          4. Increased 'mb-12' for better separation from Graphs.
-        */
         <div className="bg-white rounded-[2.5rem] p-4 md:p-8 min-h-[500px] flex flex-col shadow-sm border border-slate-100 transition-all mb-12 relative z-10">
 
             {/* Header Section */}
@@ -114,7 +117,7 @@ export default function CSRLeadsPanel({
                         {selectedCSR ? "CSR Performance" : "Global Lead Feed"}
                     </h3>
                     <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1">
-                        Active Database Monitoring
+                        Live Lead Stream
                     </p>
                 </div>
 
@@ -131,7 +134,7 @@ export default function CSRLeadsPanel({
                     </div>
 
                     <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 px-5 py-3 rounded-2xl text-[11px] font-black text-indigo-600 shadow-sm">
-                        <FiCheckCircle className="animate-pulse" />
+                        <FiCheckCircle className={processingId ? "animate-spin" : "animate-pulse"} />
                         {filteredLeads.length} Leads Found
                     </div>
                 </div>
@@ -145,7 +148,7 @@ export default function CSRLeadsPanel({
                 </div>
             ) : (
                 <div className="w-full overflow-hidden">
-                    <div className="overflow-x-auto custom-scrollbar pb-6">
+                    <div className="overflow-x-auto pb-6">
                         <table className="w-full text-left border-separate border-spacing-y-3">
                             <thead>
                                 <tr className="text-slate-400 text-[9px] uppercase tracking-[0.2em] font-black">
@@ -160,12 +163,14 @@ export default function CSRLeadsPanel({
                                 {filteredLeads.map((lead) => {
                                     const statusLower = lead.status?.toLowerCase();
                                     const isSold = ["paid", "sale", "sold", "converted"].includes(statusLower || "");
+                                    const isProcessing = processingId === lead._id;
+
                                     const csrName = typeof lead.assignedTo === 'object'
                                         ? lead.assignedTo?.name
                                         : (lead.assignedTo ? "Assigned" : "Unassigned");
 
                                     return (
-                                        <tr key={lead._id} className="group transition-all duration-300">
+                                        <tr key={lead._id} className={`group transition-all duration-300 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`}>
                                             {/* Identity Cell */}
                                             <td className="px-6 py-4 bg-slate-50/50 group-hover:bg-white group-hover:shadow-xl group-hover:shadow-indigo-500/5 transition-all rounded-l-3xl border-y border-l border-slate-100">
                                                 <div className="flex flex-col">
@@ -235,15 +240,13 @@ export default function CSRLeadsPanel({
                                                     {!isSold && (
                                                         <button
                                                             onClick={() => handleConvert(lead._id)}
-                                                            disabled={processingId !== null}
-                                                            className="bg-slate-900 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                                                            className="bg-slate-900 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
                                                         >
-                                                            {processingId === lead._id ? "..." : "Convert"}
+                                                            Convert
                                                         </button>
                                                     )}
                                                     <button
                                                         onClick={() => handleDelete(lead._id)}
-                                                        disabled={processingId !== null}
                                                         className="p-2.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
                                                     >
                                                         <FiTrash2 size={16} />

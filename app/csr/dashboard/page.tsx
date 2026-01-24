@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { getLeadsByRole, updateLead } from "@/services/lead.api";
+import { getLeadsByRole, updateLead, convertLeadToSale } from "@/services/lead.api";
 import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
@@ -17,7 +17,7 @@ import {
 
 type FilterRange = "day" | "week" | "month" | "custom";
 
-// ✅ Backend Enum ke mutabiq Lowercase Types
+// Backend Enum ke mutabiq types
 type LeadStatus = "new" | "contacted" | "interested" | "converted" | "sale" | "rejected" | "follow-up" | "paid" | "not pick" | "busy" | "wrong number";
 
 interface Lead {
@@ -49,8 +49,11 @@ export default function CSRDashboard() {
         salesStats: { day: 0, week: 0, month: 0 },
     });
 
-    // ✅ Dashboard ke liye simplified options
-    const statusOptions: LeadStatus[] = ["new", "not pick", "interested", "follow-up", "paid", "rejected", "busy"];
+    // Options matching your backend enum
+    const statusOptions: LeadStatus[] = [
+        "new", "not pick", "interested", "follow-up", "paid",
+        "rejected", "busy", "wrong number", "contacted"
+    ];
 
     const fetchData = useCallback(async (isSilent = false) => {
         try {
@@ -78,32 +81,48 @@ export default function CSRDashboard() {
     useEffect(() => { fetchData(); }, [fetchData]);
 
     const handleUpdate = async (id: string, data: Partial<Lead>) => {
-        // ✅ Payload ko hamesha lowercase bhejien backend validation ke liye
-        let updatePayload: any = { ...data };
-        if (data.status) updatePayload.status = data.status.toLowerCase();
-
-        if (updatePayload.status === "paid" || updatePayload.status === "sale") {
-            const amount = prompt("Enter Sale Amount:");
-            if (amount === null) return;
-
-            if (!amount || isNaN(Number(amount))) {
-                toast.error("Valid amount is required for Paid status");
-                return;
-            }
-            updatePayload.saleAmount = Number(amount);
-        }
-
-        const tid = toast.loading("Updating lead...");
+        const tid = toast.loading("Processing...");
         try {
-            await updateLead(id, updatePayload);
+            const normalizedStatus = data.status?.toLowerCase().trim();
+            let updatedLeadData;
 
-            // ✅ Local State Update
-            setLeads(prev => prev.map(l => l._id === id ? { ...l, ...updatePayload } : l));
+            // 1. Agar status 'paid' ya 'sale' hai toh special conversion API use hogi
+            if (normalizedStatus === "paid" || normalizedStatus === "sale") {
+                const amount = prompt("Enter Sale Amount:");
+                if (amount === null) {
+                    toast.dismiss(tid);
+                    return;
+                }
+
+                const numericAmount = Number(amount);
+                if (!amount || isNaN(numericAmount)) {
+                    toast.error("Valid amount is required for Sale status", { id: tid });
+                    return;
+                }
+
+                // Calling special function from lead.api.ts
+                updatedLeadData = await convertLeadToSale(id, numericAmount);
+            } else {
+                // 2. Baki sab options ke liye normal updateLead call hogi
+                // 'any' type use kiya hai taake payload.status par red line na aaye
+                const payload: any = { ...data };
+                if (data.status) payload.status = normalizedStatus;
+
+                updatedLeadData = await updateLead(id, payload);
+            }
+
+            // 3. Local State Update
+            setLeads(prev => prev.map(l =>
+                l._id === id ? { ...l, ...data, saleAmount: updatedLeadData?.saleAmount || l.saleAmount } : l
+            ));
+
             toast.success("Lead Updated!", { id: tid });
 
+            // Stats update karein agar status change hua ho
             if (data.status) fetchData(true);
-        } catch (err) {
-            toast.error("Update failed. Check backend console.", { id: tid });
+        } catch (err: any) {
+            console.error("Update Error:", err.message);
+            toast.error(err.message || "Update failed", { id: tid });
         }
     };
 
@@ -128,7 +147,7 @@ export default function CSRDashboard() {
     }, [leads, searchTerm, filter, startDate, endDate]);
 
     const myMetrics = useMemo(() => {
-        const sales = filteredLeads.filter(l => l.status === "paid" || l.status === "sale");
+        const sales = filteredLeads.filter(l => l.status.toLowerCase() === "paid" || l.status.toLowerCase() === "sale");
         const revenue = sales.reduce((sum, l) => sum + (l.saleAmount || 0), 0);
         const rate = filteredLeads.length > 0 ? ((sales.length / filteredLeads.length) * 100).toFixed(1) + "%" : "0%";
         return { revenue, salesCount: sales.length, rate };
@@ -220,9 +239,9 @@ export default function CSRDashboard() {
                                                 value={lead.status.toLowerCase()}
                                                 onChange={(e) => handleUpdate(lead._id, { status: e.target.value as LeadStatus })}
                                                 className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 cursor-pointer
-                                                    ${lead.status === 'paid' ? 'bg-green-100 text-green-700' :
-                                                        lead.status === 'interested' ? 'bg-blue-100 text-blue-700' :
-                                                            lead.status === 'not pick' ? 'bg-orange-100 text-orange-700' :
+                                                    ${lead.status.toLowerCase() === 'paid' || lead.status.toLowerCase() === 'sale' ? 'bg-green-100 text-green-700' :
+                                                        lead.status.toLowerCase() === 'interested' ? 'bg-blue-100 text-blue-700' :
+                                                            lead.status.toLowerCase() === 'not pick' || lead.status.toLowerCase() === 'busy' ? 'bg-orange-100 text-orange-700' :
                                                                 'bg-slate-100 text-slate-600'}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
@@ -233,7 +252,11 @@ export default function CSRDashboard() {
                                                 <FiMessageSquare className="text-slate-300" />
                                                 <input
                                                     defaultValue={lead.remarks}
-                                                    onBlur={(e) => handleUpdate(lead._id, { remarks: e.target.value })}
+                                                    onBlur={(e) => {
+                                                        if (e.target.value !== lead.remarks) {
+                                                            handleUpdate(lead._id, { remarks: e.target.value });
+                                                        }
+                                                    }}
                                                     placeholder="Add note..."
                                                     className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm text-slate-600 w-full transition-all"
                                                 />

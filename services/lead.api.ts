@@ -1,7 +1,7 @@
 import http from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
-export type LeadStatus = "New" | "Not Pick" | "Not Interested" | "Interested" | "Paid" | "Sale";
+export type LeadStatus = "New" | "Not Pick" | "Not Interested" | "Interested" | "Paid" | "Sale" | "active" | "inactive";
 
 export interface Lead {
   _id: string;
@@ -22,6 +22,7 @@ export interface LeadPayload {
   phone: string;
   course: string;
   source?: string;
+  city?: string;
   assignedTo?: string;
   status?: string;
   remarks?: string;
@@ -33,38 +34,43 @@ interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
-  leads?: T; // Handling inconsistency
+  leads?: T;
   count?: number;
 }
 
-/* ===================== HELPER: NORMALIZE STATUS ===================== */
+/* ===================== HELPER: NORMALIZE STATUS (FIXED) ===================== */
 const normalizeLeads = (leads: any[]): Lead[] => {
-  if (!Array.isArray(leads)) return []; // Safety check
-  return leads.map((l) => ({
-    ...l,
-    status: l.status
-      ? (l.status.charAt(0).toUpperCase() + l.status.slice(1).toLowerCase()) as LeadStatus
-      : "New"
-  }));
+  if (!Array.isArray(leads)) return [];
+  return leads.map((l) => {
+    // Agar status 'active' ya 'inactive' hai toh capitalize nahi karna (taake dashboard na tootay)
+    const rawStatus = l.status?.toLowerCase() || "new";
+    let finalStatus: LeadStatus;
+
+    if (rawStatus === "active" || rawStatus === "inactive") {
+      finalStatus = rawStatus as LeadStatus;
+    } else {
+      // Baaki leads ke liye purana capitalization logic barkarar rakha hai
+      finalStatus = (rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1)) as LeadStatus;
+    }
+
+    return {
+      ...l,
+      status: finalStatus
+    };
+  });
 };
 
 /* ===================== CORE LEAD FUNCTIONS ===================== */
 
 /**
- * FETCH LEADS (FIXED LOGIC)
+ * FETCH LEADS
  */
 export const getLeadsByRole = async (role: string, userId?: string): Promise<Lead[]> => {
   try {
-    // Check karein ke Admin ke liye backend endpoint '/lead' hi hai ya '/lead/all'?
-    // Aksar admin ke liye '/lead' saari leads lata hai.
     const url = role === "csr" && userId ? `/lead/csr/${userId}` : "/lead";
-
     const res = await http.get<ApiResponse<any[]>>(url);
 
-    console.log(`API Response (${role}):`, res.data);
-
     if (res.data && res.data.success) {
-      // Backend agar 'data' bhej raha hai ya 'leads', dono ko handle kiya
       const rawLeads = res.data.data || res.data.leads || [];
       return normalizeLeads(rawLeads);
     }

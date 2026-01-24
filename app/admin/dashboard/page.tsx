@@ -4,20 +4,14 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-    FiPlus,
-    FiUploadCloud,
-    FiLogOut,
-    FiTrendingUp,
-    FiRefreshCw,
-    FiTrash2,
-    FiUserPlus,
-    FiX,
+    FiPlus, FiUploadCloud, FiLogOut, FiTrendingUp,
+    FiRefreshCw, FiTrash2, FiUserPlus, FiX, FiUser, FiPhone, FiSearch, FiBook, FiMap, FiShare2
 } from "react-icons/fi";
 
 // APIs
 import { getAdminStats } from "@/services/dashboard.api";
-import { updateCSRStatus, createCSR } from "@/services/auth.api";
-import { getLeadsByRole, bulkInsertLeads, deleteAllLeads, createLead } from "@/services/lead.api";
+import { createCSR, updateCSRStatus } from "@/services/auth.api";
+import { getLeadsByRole, bulkInsertLeads, deleteAllLeads, createLead, LeadPayload } from "@/services/lead.api";
 
 // Components
 import CSRSidebar from "@/components/CsrSidebar";
@@ -34,28 +28,31 @@ export default function AdminDashboardPage() {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<"day" | "week" | "month">("month");
+    const [searchQuery, setSearchQuery] = useState("");
 
-    // Modal & Action States
+    // Modal states
     const [uploading, setUploading] = useState(false);
     const [showExcelPreview, setShowExcelPreview] = useState(false);
-    const [showManualLeadModal, setShowManualLeadModal] = useState(false);
     const [showAddCSRModal, setShowAddCSRModal] = useState(false);
-
+    const [showCreateLeadModal, setShowCreateLeadModal] = useState(false);
     const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [assignToCSR, setAssignToCSR] = useState<string>("");
 
-    // Form States
-    const [manualLeadForm, setManualLeadForm] = useState({
-        name: "", phone: "", course: "Web Development", source: "Manual",
-        city: "", assignedTo: "", status: "New", remarks: "", followUpDate: ""
+    const [csrForm, setCsrForm] = useState({ name: "", email: "", password: "", role: "csr" });
+
+    // ✅ Exactly what you asked: Name, Phone, City, Course, and Source
+    const [leadForm, setLeadForm] = useState({
+        name: "",
+        phone: "",
+        city: "",
+        course: "",
+        source: "",
+        remarks: "",
+        assignedTo: ""
     });
 
-    const [csrForm, setCsrForm] = useState({
-        name: "", email: "", password: "", role: "csr"
-    });
-
-    /* ================= DATA FETCHING (FIXED REDLINE) ================= */
+    /* ================= DATA FETCHING ================= */
     const fetchDashboardData = useCallback(async (isSilent = false) => {
         if (!isSilent) setLoading(true);
         else setRefreshing(true);
@@ -65,20 +62,11 @@ export default function AdminDashboardPage() {
                 getAdminStats(filter),
                 getLeadsByRole("admin"),
             ]);
-
             setData(statsRes);
-
-            // Redline Fix: Cast leadsRes as any to access .data
-            const responseData = leadsRes as any;
-            const extractedLeads = responseData?.data && Array.isArray(responseData.data)
-                ? responseData.data
-                : (Array.isArray(leadsRes) ? leadsRes : []);
-
-            setLeads(extractedLeads);
+            setLeads(Array.isArray(leadsRes) ? leadsRes : []);
             setError("");
         } catch (err: any) {
             setError(err.message || "Failed to load dashboard data");
-            toast.error("Fetch Error: Check connection");
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -89,251 +77,298 @@ export default function AdminDashboardPage() {
         fetchDashboardData();
     }, [fetchDashboardData]);
 
-    /* ================= ACTION HANDLERS ================= */
+    /* ================= HANDLERS ================= */
+    const handleLeadSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const toastId = toast.loading("Creating Lead...");
+        try {
+            // ✅ Mapping to your Backend Payload
+            const payload: LeadPayload = {
+                name: leadForm.name,
+                phone: leadForm.phone,
+                course: leadForm.course,
+                assignedTo: leadForm.assignedTo,
+                city: leadForm.city, // If your interface supports city
+                source: leadForm.source, // If your interface supports source
+                status: "new"
+            };
+
+            await createLead(payload);
+            toast.success("Lead Created Successfully!", { id: toastId });
+            setShowCreateLeadModal(false);
+            setLeadForm({ name: "", phone: "", city: "", course: "", source: "", remarks: "", assignedTo: "" });
+            fetchDashboardData(true);
+        } catch (err: any) {
+            toast.error(err.message || "Failed to create lead", { id: toastId });
+        }
+    };
 
     const handleCSRSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const toastId = toast.loading("Creating CSR account...");
+        const toastId = toast.loading("Registering Agent...");
         try {
             await createCSR(csrForm);
-            toast.success("CSR Registered Successfully!", { id: toastId });
+            toast.success("Agent Created!", { id: toastId });
             setShowAddCSRModal(false);
             setCsrForm({ name: "", email: "", password: "", role: "csr" });
             fetchDashboardData(true);
         } catch (err: any) {
-            toast.error(err.message || "Registration failed", { id: toastId });
+            toast.error(err.message || "Failed to create", { id: toastId });
         }
     };
 
-    const handleManualLeadSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!manualLeadForm.assignedTo) return toast.error("Please select a CSR first");
-        const toastId = toast.loading("Creating lead...");
+    const handleToggleStatus = async (csrId: string, currentStatus: string) => {
+        const toastId = toast.loading("Updating agent status...");
+        const nextStatus = currentStatus.toLowerCase().trim() === "active" ? "inactive" : "active";
         try {
-            await createLead(manualLeadForm as any);
-            toast.success("Lead created!", { id: toastId });
-            setShowManualLeadModal(false);
-            setManualLeadForm({
-                name: "", phone: "", course: "Web Development", source: "Manual",
-                city: "", assignedTo: "", status: "New", remarks: "", followUpDate: ""
-            });
-            fetchDashboardData(true);
+            setData((prev: any) => ({
+                ...prev,
+                csrPerformance: prev.csrPerformance.map((csr: any) =>
+                    (csr._id === csrId || csr.csrId === csrId) ? { ...csr, status: nextStatus } : csr
+                )
+            }));
+            await updateCSRStatus(csrId, currentStatus);
+            toast.success(`Agent is now ${nextStatus.toUpperCase()}`, { id: toastId });
         } catch (err: any) {
-            toast.error(err.message || "Creation failed", { id: toastId });
+            toast.error("Server update failed", { id: toastId });
+            fetchDashboardData(true);
         }
     };
 
     const confirmExcelUpload = async () => {
-        if (!selectedFile || !assignToCSR) return toast.error("Select file and CSR first");
+        if (!selectedFile || !assignToCSR) return toast.error("Please select an agent");
         setUploading(true);
-        const toastId = toast.loading("Uploading leads...");
+        const toastId = toast.loading("Processing leads...");
         try {
             await bulkInsertLeads(selectedFile, assignToCSR);
-            toast.success("Import Successful!", { id: toastId });
+            toast.success("Leads Imported!", { id: toastId });
             setShowExcelPreview(false);
             setSelectedFile(null);
-            setAssignToCSR("");
             fetchDashboardData(true);
         } catch (err: any) {
-            toast.error(err.message || "Excel Upload Failed", { id: toastId });
+            toast.error("Format error or network issue", { id: toastId });
         } finally {
             setUploading(false);
         }
     };
 
-    const handleToggleStatus = async (csrId: string, currentStatus: string) => {
-        const newStatus = currentStatus === "active" ? "inactive" : "active";
-        try {
-            await updateCSRStatus(csrId, newStatus);
-            toast.success(`User is now ${newStatus}`);
-            fetchDashboardData(true);
-        } catch (err: any) {
-            toast.error("Status update failed");
-        }
-    };
-
-    const handleDeleteAllLeads = async () => {
-        if (!window.confirm("CRITICAL: Wipe all lead data?")) return;
-        const toastId = toast.loading("Wiping database...");
-        try {
-            await deleteAllLeads();
-            toast.success("Database cleared!", { id: toastId });
-            fetchDashboardData(true);
-        } catch (err: any) {
-            toast.error("Deletion failed", { id: toastId });
-        }
-    };
-
-    const handleLogout = () => {
-        localStorage.clear();
-        window.location.href = "/login";
-    };
-
-    /* ================= CALCULATIONS ================= */
+    /* ================= CALCULATIONS & FILTERING ================= */
     const stats = useMemo(() => {
-        const safeLeads = leads || [];
-        const sales = safeLeads.filter(l => ["paid", "sale", "closed"].includes(l.status?.toLowerCase()));
+        const sales = leads.filter(l => ["paid", "sale", "converted", "closed", "active"].includes(l.status?.toLowerCase()));
         const revenue = sales.reduce((sum, l) => sum + (Number(l.saleAmount) || 0), 0);
-        const convRate = safeLeads.length > 0 ? ((sales.length / safeLeads.length) * 100).toFixed(1) : "0";
-        return { total: safeLeads.length, sales: sales.length, revenue, rate: convRate };
+        const rate = leads.length > 0 ? ((sales.length / leads.length) * 100).toFixed(1) : "0";
+        return { total: leads.length, sales: sales.length, revenue, rate };
     }, [leads]);
 
     const filteredLeads = useMemo(() => {
-        if (!selectedCSR) return leads;
-        return leads.filter(l => (typeof l.assignedTo === 'object' ? l.assignedTo?._id : l.assignedTo) === selectedCSR);
-    }, [leads, selectedCSR]);
+        let result = leads;
+        if (selectedCSR) {
+            result = result.filter(l => {
+                const targetId = typeof l.assignedTo === 'object' ? (l.assignedTo?._id || l.assignedTo?.csrId) : l.assignedTo;
+                return targetId === selectedCSR;
+            });
+        }
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            result = result.filter(l =>
+                l.name?.toLowerCase().includes(query) ||
+                l.phone?.includes(query)
+            );
+        }
+        return result;
+    }, [leads, selectedCSR, searchQuery]);
 
     const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', minimumFractionDigits: 0 }).format(val);
+        return new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', maximumFractionDigits: 0 }).format(val);
     };
 
     if (loading && !data) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
 
     return (
-        <div className="p-4 md:p-8 bg-[#F8FAFC] min-h-screen">
-            <Toaster position="top-right" />
+        <div className="p-4 md:p-8 bg-[#F8FAFC] min-h-screen font-sans">
+            <Toaster position="bottom-center" />
 
-            {/* HEADER */}
-            <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-white p-6 rounded-3xl shadow-sm border border-slate-100 gap-6 mb-8">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                        Admin <span className="bg-indigo-600 text-white px-3 py-1 rounded-xl text-sm italic">Panel</span>
-                    </h1>
-                    <p className="text-slate-400 text-[10px] mt-1 font-black uppercase tracking-[0.2em] flex items-center gap-2">
-                        System Live {refreshing && <FiRefreshCw className="animate-spin text-indigo-500" />}
-                    </p>
+            {/* --- HEADER --- */}
+            <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 gap-6 mb-8">
+                <div className="flex items-center gap-4">
+                    <div className="h-14 w-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                        <FiTrendingUp className="text-white text-2xl" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black text-slate-800 tracking-tight">Admin <span className="text-indigo-600">Console</span></h1>
+                        <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 mt-0.5">
+                            Real-time Sync {refreshing && <FiRefreshCw className="animate-spin text-indigo-500" />}
+                        </p>
+                    </div>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                    <button onClick={() => setShowManualLeadModal(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-3 rounded-2xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-md">
-                        <FiPlus /> Add Lead
+                    <button onClick={() => setShowCreateLeadModal(true)} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3.5 rounded-2xl font-bold text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">
+                        <FiPlus size={18} /> Create Lead
                     </button>
-
-                    <button onClick={() => setShowAddCSRModal(true)} className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-md">
-                        <FiUserPlus /> Add CSR
+                    <button onClick={() => setShowAddCSRModal(true)} className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3.5 rounded-2xl font-bold text-sm shadow-xl shadow-slate-200 hover:bg-black transition-all active:scale-95">
+                        <FiUserPlus size={18} /> New Agent
                     </button>
-
-                    <label className="flex items-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-100 px-5 py-3 rounded-2xl font-bold text-sm cursor-pointer hover:bg-emerald-100 transition-all">
-                        <FiUploadCloud /> {uploading ? "Wait..." : "Import Excel"}
-                        <input type="file" hidden accept=".xlsx, .xls" onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) { setSelectedFile(file); setShowExcelPreview(true); }
-                        }} />
+                    <label className="flex items-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-100 px-6 py-3.5 rounded-2xl font-bold text-sm cursor-pointer hover:bg-emerald-100 transition-all">
+                        <FiUploadCloud size={18} /> {uploading ? "Importing..." : "Excel Import"}
+                        <input type="file" hidden accept=".xlsx, .xls" onChange={(e) => { const file = e.target.files?.[0]; if (file) { setSelectedFile(file); setShowExcelPreview(true); } }} />
                     </label>
-
-                    <button onClick={handleLogout} className="p-3 bg-slate-100 text-slate-600 rounded-2xl hover:bg-rose-50 hover:text-rose-600 transition-all">
-                        <FiLogOut />
+                    <button onClick={() => { localStorage.clear(); window.location.href = "/login"; }} className="p-4 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all">
+                        <FiLogOut size={20} />
                     </button>
                 </div>
             </header>
 
-            {/* STATS */}
+            {/* --- STATS --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-                <SummaryCard title="Total Leads" value={stats.total.toString()} color="purple" trend="Overall" />
-                <SummaryCard title="Closed Paid" value={stats.sales.toString()} color="green" trend="Target" />
-                <SummaryCard title="Total Revenue" value={formatCurrency(stats.revenue)} color="blue" trend="Verified" />
-                <SummaryCard title="Performance" value={`${stats.rate}%`} color="orange" trend="Rate" />
+                <SummaryCard title="Total Pool" value={stats.total.toString()} color="purple" trend="System Wide" />
+                <SummaryCard title="Conversions" value={stats.sales.toString()} color="green" trend="Target Hit" />
+                <SummaryCard title="Total Revenue" value={formatCurrency(stats.revenue)} color="blue" trend="Gross PKR" />
+                <SummaryCard title="Performance" value={`${stats.rate}%`} color="orange" trend="Efficiency" />
             </div>
 
             <div className="grid grid-cols-12 gap-8">
                 <aside className="col-span-12 lg:col-span-3">
-                    <div className="sticky top-8 space-y-4">
-                        <CSRSidebar csrs={data?.csrPerformance || []} selectedCSR={selectedCSR} onSelect={setSelectedCSR} onToggleStatus={handleToggleStatus} />
-                        {selectedCSR && (
-                            <button onClick={() => setSelectedCSR(null)} className="w-full p-4 text-xs font-black text-indigo-600 bg-indigo-50 rounded-2xl border border-indigo-100">
-                                SHOW ALL SYSTEM LEADS
-                            </button>
-                        )}
-                    </div>
+                    <CSRSidebar csrs={data?.csrPerformance || []} selectedCSR={selectedCSR} onSelect={setSelectedCSR} onToggleStatus={handleToggleStatus} />
                 </aside>
 
                 <section className="col-span-12 lg:col-span-9 space-y-8">
-                    <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                        <div className="flex justify-between items-center mb-8">
-                            <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><FiTrendingUp className="text-indigo-600" /> Growth Analytics</h3>
-                            <div className="flex bg-slate-100 p-1 rounded-xl">
-                                {["day", "week", "month"].map((f) => (
-                                    <button key={f} onClick={() => setFilter(f as any)} className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${filter === f ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>{f}</button>
-                                ))}
-                            </div>
-                        </div>
-                        <DashboardGraphs leadsStats={data?.leadsStats} salesStats={data?.salesStats} filter={filter} />
-                    </div>
+                    <DashboardGraphs leadsStats={data?.leadsStats} salesStats={data?.salesStats} filter={filter} />
 
-                    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                            <div className="flex items-center gap-4">
-                                <h2 className="font-black text-slate-800">Leads Database</h2>
-                                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full uppercase">{filteredLeads.length} Records</span>
+                    <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="p-7 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center bg-slate-50/40 gap-4">
+                            <h2 className="font-black text-slate-800">Active Leads ({filteredLeads.length})</h2>
+
+                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                <div className="relative flex-1 md:w-64">
+                                    <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search by name/phone..."
+                                        className="w-full pl-11 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500 font-bold"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                                <button onClick={async () => { if (confirm("DANGER: Wipe all leads?")) { await deleteAllLeads(); fetchDashboardData(true); } }} className="flex items-center gap-2 px-5 py-2.5 bg-rose-50 text-rose-600 rounded-xl font-black text-[10px] hover:bg-rose-600 hover:text-white transition-all whitespace-nowrap">
+                                    <FiTrash2 /> Wipe Database
+                                </button>
                             </div>
-                            <button onClick={handleDeleteAllLeads} className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold text-xs hover:bg-rose-600 hover:text-white transition-all"><FiTrash2 /> Wipe Data</button>
                         </div>
                         <CSRLeadsPanel leads={filteredLeads} selectedCSR={selectedCSR} onConvertToSale={() => fetchDashboardData(true)} onDeleteLead={() => fetchDashboardData(true)} />
                     </div>
                 </section>
             </div>
 
-            {/* MODALS */}
+            {/* ================= MODALS ================= */}
+
+            {/* 1. CREATE LEAD MODAL (UPDATED WITH CITY AND SOURCE) */}
             <AnimatePresence>
-                {/* ADD CSR MODAL */}
-                {showAddCSRModal && (
-                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[130] p-4">
-                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden">
-                            <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
-                                <h2 className="text-xl font-bold">Create CSR Account</h2>
-                                <button onClick={() => setShowAddCSRModal(false)}><FiX size={24} /></button>
-                            </div>
-                            <form onSubmit={handleCSRSubmit} className="p-8 space-y-4">
-                                <input required placeholder="Full Name" className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-indigo-500/20 font-bold"
-                                    value={csrForm.name} onChange={e => setCsrForm({ ...csrForm, name: e.target.value })} />
-                                <input required type="email" placeholder="Email Address" className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-indigo-500/20 font-bold"
-                                    value={csrForm.email} onChange={e => setCsrForm({ ...csrForm, email: e.target.value })} />
-                                <input required type="password" placeholder="Password" className="w-full p-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 ring-indigo-500/20 font-bold"
-                                    value={csrForm.password} onChange={e => setCsrForm({ ...csrForm, password: e.target.value })} />
-                                <button type="submit" className="w-full bg-slate-900 text-white p-5 rounded-2xl font-black shadow-lg hover:opacity-90 transition-all">REGISTER AGENT</button>
+                {showCreateLeadModal && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[150] p-4">
+                        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 shadow-2xl relative">
+                            <button onClick={() => setShowCreateLeadModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-rose-500 transition-colors"><FiX size={24} /></button>
+                            <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-3"><FiPlus className="text-indigo-600" /> New Lead Entry</h2>
+                            <form onSubmit={handleLeadSubmit} className="space-y-4">
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Customer Name</label>
+                                        <div className="relative">
+                                            <FiUser className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                            <input required className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" placeholder="Ali Ahmed" value={leadForm.name} onChange={e => setLeadForm({ ...leadForm, name: e.target.value })} />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Phone Number</label>
+                                        <div className="relative">
+                                            <FiPhone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                            <input required className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" placeholder="03XXXXXXXXX" value={leadForm.phone} onChange={e => setLeadForm({ ...leadForm, phone: e.target.value })} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2">City Name</label>
+                                        <div className="relative">
+                                            <FiMap className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                            <input required className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" placeholder="e.g. Lahore" value={leadForm.city} onChange={e => setLeadForm({ ...leadForm, city: e.target.value })} />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Source</label>
+                                        <div className="relative">
+                                            <FiShare2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 z-10" />
+                                            <select required className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 appearance-none" value={leadForm.source} onChange={e => setLeadForm({ ...leadForm, source: e.target.value })}>
+                                                <option value="">Select Source</option>
+                                                <option value="Facebook">Facebook</option>
+                                                <option value="Instagram">Instagram</option>
+                                                <option value="WhatsApp">WhatsApp</option>
+                                                <option value="LinkedIn">LinkedIn</option>
+                                                <option value="TikTok">TikTok</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Course Name</label>
+                                    <div className="relative">
+                                        <FiBook className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input required className="w-full pl-12 pr-4 py-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" placeholder="e.g. Graphic Design" value={leadForm.course} onChange={e => setLeadForm({ ...leadForm, course: e.target.value })} />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Assign To Agent</label>
+                                    <select required className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 appearance-none" value={leadForm.assignedTo} onChange={e => setLeadForm({ ...leadForm, assignedTo: e.target.value })}>
+                                        <option value="">Select an Agent...</option>
+                                        {data?.csrPerformance?.map((c: any) => (
+                                            <option key={c._id || c.csrId} value={c._id || c.csrId}>{c.name} ({c.status})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button type="submit" className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98] mt-4">SAVE & ASSIGN LEAD</button>
                             </form>
                         </motion.div>
                     </div>
                 )}
+            </AnimatePresence>
 
-                {/* MANUAL LEAD MODAL */}
-                {showManualLeadModal && (
-                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[110] p-4">
-                        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl overflow-hidden">
-                            <div className="bg-indigo-600 p-6 text-white flex justify-between items-center">
-                                <h2 className="text-xl font-bold">New Lead Entry</h2>
-                                <button onClick={() => setShowManualLeadModal(false)}><FiX size={24} /></button>
-                            </div>
-                            <form onSubmit={handleManualLeadSubmit} className="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <input required placeholder="Client Name" className="p-4 bg-slate-50 rounded-2xl font-bold" value={manualLeadForm.name} onChange={e => setManualLeadForm({ ...manualLeadForm, name: e.target.value })} />
-                                <input required placeholder="Phone" className="p-4 bg-slate-50 rounded-2xl font-bold" value={manualLeadForm.phone} onChange={e => setManualLeadForm({ ...manualLeadForm, phone: e.target.value })} />
-                                <input placeholder="City" className="p-4 bg-slate-50 rounded-2xl font-bold" value={manualLeadForm.city} onChange={e => setManualLeadForm({ ...manualLeadForm, city: e.target.value })} />
-                                <select required className="p-4 bg-slate-50 rounded-2xl font-bold text-indigo-600" value={manualLeadForm.assignedTo} onChange={e => setManualLeadForm({ ...manualLeadForm, assignedTo: e.target.value })}>
-                                    <option value="">Assign To CSR...</option>
-                                    {data?.csrPerformance?.map((c: any) => <option key={c.csrId || c._id} value={c.csrId || c._id}>{c.name}</option>)}
-                                </select>
-                                <textarea placeholder="Remarks" className="p-4 bg-slate-50 rounded-2xl md:col-span-2 h-24 font-medium" value={manualLeadForm.remarks} onChange={e => setManualLeadForm({ ...manualLeadForm, remarks: e.target.value })} />
-                                <button type="submit" className="md:col-span-2 bg-indigo-600 text-white p-5 rounded-2xl font-black shadow-lg">SAVE LEAD</button>
-                            </form>
-                        </motion.div>
-                    </div>
-                )}
-
-                {/* EXCEL MODAL */}
+            {/* 2. EXCEL IMPORT MODAL */}
+            <AnimatePresence>
                 {showExcelPreview && (
-                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[120] p-4">
-                        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white p-8 rounded-[2.5rem] max-w-md w-full shadow-2xl text-center">
-                            <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6"><FiUploadCloud size={40} /></div>
-                            <h2 className="text-2xl font-black text-slate-800 mb-2">Assign Batch</h2>
-                            <select value={assignToCSR} onChange={(e) => setAssignToCSR(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl mb-8 font-bold border-2 border-slate-100 outline-none">
-                                <option value="">Target CSR...</option>
-                                {data?.csrPerformance?.map((c: any) => <option key={c.csrId || c._id} value={c.csrId || c._id}>{c.name}</option>)}
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[150] p-4">
+                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[3rem] w-full max-w-md p-10 text-center relative shadow-2xl">
+                            <button onClick={() => setShowExcelPreview(false)} className="absolute top-6 right-6 text-slate-300 hover:text-rose-500"><FiX size={24} /></button>
+                            <div className="h-20 w-20 bg-emerald-50 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-6"><FiUploadCloud size={40} /></div>
+                            <h2 className="text-2xl font-black text-slate-800 mb-8">Assign Bulk Leads</h2>
+                            <select className="w-full p-5 bg-slate-50 rounded-2xl font-bold mb-8 border-2 border-slate-100 outline-none focus:border-indigo-500" value={assignToCSR} onChange={e => setAssignToCSR(e.target.value)}>
+                                <option value="">Select Agent...</option>
+                                {data?.csrPerformance?.map((c: any) => (<option key={c._id || c.csrId} value={c._id || c.csrId}>{c.name}</option>))}
                             </select>
-                            <div className="flex gap-4">
-                                <button onClick={() => { setShowExcelPreview(false); setSelectedFile(null); }} className="flex-1 font-bold text-slate-400">Cancel</button>
-                                <button onClick={confirmExcelUpload} disabled={!assignToCSR || uploading} className="flex-[2] p-4 bg-slate-900 text-white rounded-2xl font-black">IMPORT NOW</button>
-                            </div>
+                            <button onClick={confirmExcelUpload} disabled={uploading || !assignToCSR} className="w-full p-5 bg-indigo-600 text-white rounded-[1.5rem] font-black shadow-xl disabled:opacity-50 hover:bg-indigo-700 transition-all">{uploading ? "IMPORTING..." : "CONFIRM IMPORT"}</button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* 3. ADD CSR MODAL */}
+            <AnimatePresence>
+                {showAddCSRModal && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[150] p-4">
+                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[3rem] w-full max-w-md p-10 relative shadow-2xl">
+                            <h2 className="text-2xl font-black text-slate-800 mb-6">Register Agent</h2>
+                            <form onSubmit={handleCSRSubmit} className="space-y-4">
+                                <input className="w-full p-4 bg-slate-50 rounded-xl border border-slate-100 outline-none font-bold" placeholder="Full Name" required value={csrForm.name} onChange={e => setCsrForm({ ...csrForm, name: e.target.value })} />
+                                <input className="w-full p-4 bg-slate-50 rounded-xl border border-slate-100 outline-none font-bold" placeholder="Email Address" type="email" required value={csrForm.email} onChange={e => setCsrForm({ ...csrForm, email: e.target.value })} />
+                                <input className="w-full p-4 bg-slate-50 rounded-xl border border-slate-100 outline-none font-bold" placeholder="Password" type="password" required value={csrForm.password} onChange={e => setCsrForm({ ...csrForm, password: e.target.value })} />
+                                <button type="submit" className="w-full p-5 bg-slate-900 text-white rounded-2xl font-black hover:bg-black transition-all">CREATE ACCOUNT</button>
+                                <button type="button" onClick={() => setShowAddCSRModal(false)} className="w-full p-4 text-slate-400 font-bold">CANCEL</button>
+                            </form>
                         </motion.div>
                     </div>
                 )}
