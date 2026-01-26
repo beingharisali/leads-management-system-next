@@ -11,10 +11,12 @@ import {
     FiTrendingUp
 } from "react-icons/fi";
 
+// 1. Icon prop ko interface mein add kiya
 interface SummaryCardProps {
     title: string;
     value: string | number;
     trend?: string;
+    icon?: React.ReactNode; // <--- New prop added
     color?: "purple" | "green" | "blue" | "rose" | "orange";
 }
 
@@ -22,10 +24,10 @@ export default function SummaryCard({
     title,
     value,
     trend,
+    icon, // <--- Destructured icon
     color = "purple"
 }: SummaryCardProps) {
 
-    // Color variants mapping for background, text, and decorative elements
     const themes = {
         purple: {
             bg: "bg-white",
@@ -33,7 +35,7 @@ export default function SummaryCard({
             iconBg: "bg-purple-50",
             text: "text-purple-600",
             bar: "bg-purple-500",
-            icon: <FiUsers />
+            defaultIcon: <FiUsers />
         },
         green: {
             bg: "bg-white",
@@ -41,7 +43,7 @@ export default function SummaryCard({
             iconBg: "bg-emerald-50",
             text: "text-emerald-600",
             bar: "bg-emerald-500",
-            icon: <FiCheckCircle />
+            defaultIcon: <FiCheckCircle />
         },
         blue: {
             bg: "bg-white",
@@ -49,7 +51,7 @@ export default function SummaryCard({
             iconBg: "bg-blue-50",
             text: "text-blue-600",
             bar: "bg-blue-500",
-            icon: <FiDollarSign />
+            defaultIcon: <FiDollarSign />
         },
         rose: {
             bg: "bg-white",
@@ -57,7 +59,7 @@ export default function SummaryCard({
             iconBg: "bg-rose-50",
             text: "text-rose-600",
             bar: "bg-rose-500",
-            icon: <FiActivity />
+            defaultIcon: <FiActivity />
         },
         orange: {
             bg: "bg-white",
@@ -65,20 +67,18 @@ export default function SummaryCard({
             iconBg: "bg-orange-50",
             text: "text-orange-600",
             bar: "bg-orange-500",
-            icon: <FiTrendingUp />
+            defaultIcon: <FiTrendingUp />
         }
     };
 
     const theme = themes[color] || themes.purple;
 
-    // Trend logic
     const isNegative = trend?.includes("-");
     const isNeutral = trend?.toLowerCase().includes("live") || trend?.toLowerCase().includes("awaiting");
 
     return (
         <div className={`group relative overflow-hidden ${theme.bg} p-6 rounded-[2.5rem] border ${theme.border} shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300`}>
 
-            {/* Background Decorative Blur */}
             <div className={`absolute -right-4 -top-4 w-24 h-24 ${theme.iconBg} rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity`} />
 
             <div className="flex justify-between items-start relative z-10">
@@ -91,7 +91,6 @@ export default function SummaryCard({
                     </h3>
                 </div>
 
-                {/* Dynamic Trend Badge */}
                 {trend && (
                     <div className={`flex items-center gap-1 px-3 py-1.5 rounded-2xl text-[10px] font-black border transition-all ${isNeutral
                         ? "bg-slate-50 text-slate-500 border-slate-100"
@@ -109,7 +108,6 @@ export default function SummaryCard({
                 )}
             </div>
 
-            {/* Bottom Section: Progress Bar & Icon */}
             <div className="mt-8 flex items-center gap-4 relative z-10">
                 <div className="flex-1 h-2 bg-slate-100/50 rounded-full overflow-hidden">
                     <div
@@ -118,10 +116,10 @@ export default function SummaryCard({
                     ></div>
                 </div>
 
-                {/* Theme-based Icon Container */}
                 <div className={`${theme.iconBg} ${theme.text} p-2.5 rounded-2xl shadow-sm group-hover:scale-110 group-hover:rotate-6 transition-all duration-500`}>
                     <div className="text-lg">
-                        {theme.icon}
+                        {/* 2. Priority: Passed icon > Default theme icon */}
+                        {icon || theme.defaultIcon}
                     </div>
                 </div>
             </div>
