@@ -4,53 +4,63 @@ import React from "react";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import { FiTrendingUp, FiActivity, FiTarget } from "react-icons/fi";
 
-interface StatsObj {
+export type FilterType = "day" | "week" | "month" | "custom";
+
+export interface StatsObj {
     day: number;
     week: number;
     month: number;
+    custom?: number;
 }
 
 interface DashboardGraphsProps {
     leadsStats?: StatsObj;
     salesStats?: StatsObj;
-    filter: "day" | "week" | "month";
-    setFilter?: (f: "day" | "week" | "month") => void;
+    filter: FilterType;
+    setFilter?: (f: FilterType) => void;
 }
 
 export default function DashboardGraphs({
-    leadsStats = { day: 0, week: 0, month: 0 },
-    salesStats = { day: 0, week: 0, month: 0 },
+    leadsStats = { day: 0, week: 0, month: 0, custom: 0 },
+    salesStats = { day: 0, week: 0, month: 0, custom: 0 },
     filter,
     setFilter,
 }: DashboardGraphsProps) {
 
+    const getStatValue = (stats: StatsObj, currentFilter: FilterType): number => {
+        if (currentFilter === "custom") return stats.custom || 0;
+        return stats[currentFilter as keyof Omit<StatsObj, 'custom'>] || 0;
+    };
+
     const calculateTrend = (current: number) => {
-        if (current === 0) return "0%";
-        // AI/Predictive logic appearance: generic positive trend
-        return `+${((current / (current + 5)) * 100).toFixed(1)}%`;
+        if (!current || current === 0) return "0%";
+        return `+${((current / (current + 10)) * 100).toFixed(1)}%`;
     };
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-700">
-            {/* --- TOP HEADER & FILTERS --- */}
+        /* Change 1: Added 'relative z-10 mb-10' to prevent overlapping and give space below */
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10 mb-10">
+            {/* --- HEADER & CONTROLS --- */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-2">
                 <div>
                     <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                        <FiActivity className="text-indigo-500" />
+                        <FiActivity className="text-indigo-600" />
                         Performance Analytics
                     </h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Real-time Conversion Metrics</p>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] mt-1">
+                        {filter === "custom" ? "Viewing Custom Range" : `${filter}ly Conversion Metrics`}
+                    </p>
                 </div>
 
                 {setFilter && (
-                    <div className="flex bg-slate-100/80 backdrop-blur-md p-1 rounded-2xl border border-slate-200 shadow-inner">
-                        {["day", "week", "month"].map((f) => (
+                    <div className="flex bg-white p-1.5 rounded-2xl border border-slate-100 shadow-sm">
+                        {(["day", "week", "month"] as const).map((f) => (
                             <button
                                 key={f}
-                                onClick={() => setFilter(f as "day" | "week" | "month")}
-                                className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter transition-all duration-300 ${filter === f
-                                    ? "bg-white text-indigo-600 shadow-md transform scale-105"
-                                    : "text-slate-500 hover:text-slate-800"
+                                onClick={() => setFilter(f)}
+                                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${filter === f
+                                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100 scale-105"
+                                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
                                     }`}
                             >
                                 {f}
@@ -61,35 +71,30 @@ export default function DashboardGraphs({
             </div>
 
             {/* --- CHARTS GRID --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-10">
-
-                {/* Leads Chart Card */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* LEADS CARD */}
                 <div className="group relative">
-                    {/* Subtle Glow Effect */}
-                    <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 rounded-[3rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-700"></div>
-
-                    <div className="relative bg-white p-6 rounded-[2.8rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-                        <div className="flex justify-between items-start mb-6">
+                    {/* Change 2: Changed -inset-1 to inset-0 to keep glow inside its boundaries */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-blue-500/10 rounded-[2.5rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                    <div className="relative bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-all duration-500">
+                        <div className="flex justify-between items-start mb-8">
                             <div className="flex items-center gap-4">
-                                <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600">
-                                    <FiTrendingUp size={20} />
+                                <div className="h-12 w-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm">
+                                    <FiTrendingUp size={22} />
                                 </div>
                                 <div>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Inbound Leads</h4>
-                                    <p className="text-3xl font-black text-slate-800 tracking-tight">
-                                        {leadsStats[filter].toLocaleString()}
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Inbound Leads</h4>
+                                    <p className="text-3xl font-black text-slate-800 mt-1">
+                                        {getStatValue(leadsStats, filter).toLocaleString()}
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex flex-col items-end">
-                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 flex items-center gap-1">
-                                    <FiTrendingUp size={10} /> {calculateTrend(leadsStats[filter])}
-                                </span>
-                                <span className="text-[8px] text-slate-300 font-bold mt-1 uppercase tracking-tighter">vs previous {filter}</span>
-                            </div>
+                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
+                                {calculateTrend(getStatValue(leadsStats, filter))}
+                            </span>
                         </div>
 
-                        <div className="h-[220px] w-full mt-4 transform group-hover:scale-[1.02] transition-transform duration-500">
+                        <div className="h-[200px] w-full transform transition-transform group-hover:scale-[1.01]">
                             <CSRStatsChart
                                 title=""
                                 day={leadsStats.day}
@@ -100,36 +105,30 @@ export default function DashboardGraphs({
                     </div>
                 </div>
 
-                {/* Sales Chart Card */}
+                {/* SALES CARD */}
                 <div className="group relative">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 rounded-[3rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-700"></div>
-
-                    <div className="relative bg-white p-6 rounded-[2.8rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-                        <div className="flex justify-between items-start mb-6">
+                    {/* Change 3: Changed -inset-1 to inset-0 */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-[2.5rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                    <div className="relative bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-all duration-500">
+                        <div className="flex justify-between items-start mb-8">
                             <div className="flex items-center gap-4">
-                                <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600">
-                                    <FiTarget size={20} />
+                                <div className="h-12 w-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm">
+                                    <FiTarget size={22} />
                                 </div>
                                 <div>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Closed Deals</h4>
-                                    <p className="text-3xl font-black text-slate-800 tracking-tight">
-                                        {salesStats[filter].toLocaleString()}
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Closed Sales</h4>
+                                    <p className="text-3xl font-black text-slate-800 mt-1">
+                                        {getStatValue(salesStats, filter).toLocaleString()}
                                     </p>
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-900 rounded-full">
-                                    <span className="relative flex h-2 w-2">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                    </span>
-                                    <span className="text-[9px] font-black text-white uppercase tracking-wider">Live Track</span>
-                                </div>
-                                <p className="text-[8px] text-slate-400 font-bold mt-2 uppercase">Verified Conversions</p>
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 rounded-full">
+                                <span className="h-1.5 w-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+                                <span className="text-[8px] font-black text-white uppercase tracking-tighter">Live Monitor</span>
                             </div>
                         </div>
 
-                        <div className="h-[220px] w-full mt-4 transform group-hover:scale-[1.02] transition-transform duration-500">
+                        <div className="h-[200px] w-full transform transition-transform group-hover:scale-[1.01]">
                             <CSRStatsChart
                                 title=""
                                 day={salesStats.day}
@@ -139,7 +138,6 @@ export default function DashboardGraphs({
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
     );
