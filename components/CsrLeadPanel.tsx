@@ -38,7 +38,6 @@ export default function CSRLeadsPanel({
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
 
-    // Memoized filtering logic
     const filteredLeads = useMemo(() => {
         return leads.filter((lead) => {
             const searchLower = searchTerm.toLowerCase();
@@ -60,26 +59,19 @@ export default function CSRLeadsPanel({
         });
     }, [leads, selectedCSR, searchTerm]);
 
-    /* ================= ACTIONS WITH OPTIMISTIC UPDATES ================= */
-
     const handleConvert = async (id: string) => {
         const amountStr = prompt("Enter Sale Amount (PKR):");
         if (amountStr === null) return;
-
         const amount = Number(amountStr);
         if (!amountStr || isNaN(amount) || amount <= 0) {
             toast.error("Please enter a valid sale amount");
             return;
         }
-
         const toastId = toast.loading("Processing payment...");
         setProcessingId(id);
-
         try {
             await convertLeadToSale(id, amount);
             toast.success("Payment Recorded Successfully!", { id: toastId });
-
-            // Backend update ke baad parent ko inform karein
             onConvertToSale();
         } catch (err: any) {
             toast.error(err.message || "Failed to convert lead", { id: toastId });
@@ -90,15 +82,11 @@ export default function CSRLeadsPanel({
 
     const handleDelete = async (id: string) => {
         if (!confirm("Are you sure you want to wipe this lead?")) return;
-
         const toastId = toast.loading("Deleting lead...");
         setProcessingId(id);
-
         try {
             await deleteLead(id);
             toast.success("Lead wiped from system", { id: toastId });
-
-            // List se nikaalne ke liye parent refresh trigger karein
             onDeleteLead();
         } catch (err: any) {
             toast.error(err.message || "Failed to delete lead", { id: toastId });
@@ -108,10 +96,11 @@ export default function CSRLeadsPanel({
     };
 
     return (
-        <div className="bg-white rounded-[2.5rem] p-4 md:p-8 min-h-[500px] flex flex-col shadow-sm border border-slate-100 transition-all mb-12 relative z-10">
+        /* Change: Added 'relative z-0' and ensured padding is consistent */
+        <div className="bg-white rounded-[2.5rem] p-6 md:p-10 min-h-[500px] flex flex-col shadow-sm border border-slate-100 transition-all mb-12 relative z-0">
 
             {/* Header Section */}
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6 px-2">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6 px-2">
                 <div>
                     <h3 className="text-2xl font-black text-slate-800 tracking-tight italic">
                         {selectedCSR ? "CSR Performance" : "Global Lead Feed"}
@@ -147,9 +136,9 @@ export default function CSRLeadsPanel({
                     <p className="text-slate-400 font-black text-sm uppercase tracking-widest">No matching leads</p>
                 </div>
             ) : (
-                <div className="w-full overflow-hidden">
+                <div className="w-full overflow-visible"> {/* Change: overflow-visible for tooltips/dropdowns */}
                     <div className="overflow-x-auto pb-6">
-                        <table className="w-full text-left border-separate border-spacing-y-3">
+                        <table className="w-full text-left border-separate border-spacing-y-4"> {/* Increased spacing */}
                             <thead>
                                 <tr className="text-slate-400 text-[9px] uppercase tracking-[0.2em] font-black">
                                     <th className="px-6 py-2">Identity</th>
@@ -164,15 +153,13 @@ export default function CSRLeadsPanel({
                                     const statusLower = lead.status?.toLowerCase();
                                     const isSold = ["paid", "sale", "sold", "converted"].includes(statusLower || "");
                                     const isProcessing = processingId === lead._id;
-
                                     const csrName = typeof lead.assignedTo === 'object'
                                         ? lead.assignedTo?.name
                                         : (lead.assignedTo ? "Assigned" : "Unassigned");
 
                                     return (
-                                        <tr key={lead._id} className={`group transition-all duration-300 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`}>
-                                            {/* Identity Cell */}
-                                            <td className="px-6 py-4 bg-slate-50/50 group-hover:bg-white group-hover:shadow-xl group-hover:shadow-indigo-500/5 transition-all rounded-l-3xl border-y border-l border-slate-100">
+                                        <tr key={lead._id} className={`group transition-all duration-300 ${isProcessing ? 'opacity-40' : ''}`}>
+                                            <td className="px-6 py-5 bg-slate-50/50 group-hover:bg-white group-hover:shadow-xl group-hover:shadow-indigo-500/5 transition-all rounded-l-3xl border-y border-l border-slate-100">
                                                 <div className="flex flex-col">
                                                     <span className="font-black text-slate-800 text-sm">{lead.name || "N/A"}</span>
                                                     <span className="text-[10px] text-indigo-500 font-bold">{lead.phone}</span>
@@ -183,8 +170,7 @@ export default function CSRLeadsPanel({
                                                 </div>
                                             </td>
 
-                                            {/* Details Cell */}
-                                            <td className="px-6 py-4 bg-slate-50/50 group-hover:bg-white border-y border-slate-100">
+                                            <td className="px-6 py-5 bg-slate-50/50 group-hover:bg-white border-y border-slate-100">
                                                 <div className="flex flex-col gap-1">
                                                     <span className="w-fit text-[9px] font-black text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 uppercase">
                                                         {lead.course || "General"}
@@ -195,8 +181,7 @@ export default function CSRLeadsPanel({
                                                 </div>
                                             </td>
 
-                                            {/* City/Date Cell */}
-                                            <td className="px-6 py-4 bg-slate-50/50 group-hover:bg-white border-y border-slate-100">
+                                            <td className="px-6 py-5 bg-slate-50/50 group-hover:bg-white border-y border-slate-100">
                                                 <div className="flex flex-col">
                                                     <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-700 uppercase">
                                                         <FiCalendar className="text-indigo-500" />
@@ -208,8 +193,7 @@ export default function CSRLeadsPanel({
                                                 </div>
                                             </td>
 
-                                            {/* Status Cell */}
-                                            <td className="px-6 py-4 bg-slate-50/50 group-hover:bg-white border-y border-slate-100">
+                                            <td className="px-6 py-5 bg-slate-50/50 group-hover:bg-white border-y border-slate-100">
                                                 {isSold ? (
                                                     <div className="flex items-center gap-2">
                                                         <div className="p-2 bg-emerald-100 rounded-lg">
@@ -234,8 +218,7 @@ export default function CSRLeadsPanel({
                                                 )}
                                             </td>
 
-                                            {/* Actions Cell */}
-                                            <td className="px-6 py-4 bg-slate-50/50 group-hover:bg-white group-hover:shadow-xl group-hover:shadow-indigo-500/5 transition-all rounded-r-3xl border-y border-r border-slate-100 text-center">
+                                            <td className="px-6 py-5 bg-slate-50/50 group-hover:bg-white group-hover:shadow-xl group-hover:shadow-indigo-500/5 transition-all rounded-r-3xl border-y border-r border-slate-100 text-center">
                                                 <div className="flex justify-center gap-2">
                                                     {!isSold && (
                                                         <button

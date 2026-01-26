@@ -1,6 +1,7 @@
 import http from "./http"; // axios instance
 
-type Filter = "day" | "week" | "month";
+// Type ko update kiya taake 'custom' aur dynamic strings bhi allow hon
+type Filter = "day" | "week" | "month" | "custom" | string;
 
 /* ===================== CSR ===================== */
 
@@ -23,6 +24,7 @@ export const getCSRStats = async (filter?: Filter) => {
 // Admin dashboard stats
 export const getAdminStats = async (filter?: Filter) => {
     const res = await http.get("/dashboard/admin-stats", {
+        // Agar filter string hai toh axios usey query param mein sahi bhejega
         params: filter ? { filter } : {},
     });
     return res.data;
