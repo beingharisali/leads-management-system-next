@@ -8,24 +8,32 @@ import {
     FiDollarSign,
     FiUsers,
     FiCheckCircle,
-    FiTrendingUp
+    FiTrendingUp,
+    FiPhoneCall,
+    FiAlertCircle
 } from "react-icons/fi";
 
-// 1. Icon prop ko interface mein add kiya
+/* ================= TYPES ================= */
+
 interface SummaryCardProps {
     title: string;
     value: string | number;
     trend?: string;
-    icon?: React.ReactNode; // <--- New prop added
-    color?: "purple" | "green" | "blue" | "rose" | "orange";
+    icon?: React.ReactNode;
+    // Updated: Added 'indigo' and 'slate' to the allowed types
+    color?: "purple" | "green" | "blue" | "rose" | "orange" | "indigo" | "slate";
+    progress?: number;
 }
+
+/* ================= COMPONENT ================= */
 
 export default function SummaryCard({
     title,
     value,
     trend,
-    icon, // <--- Destructured icon
-    color = "purple"
+    icon,
+    color = "purple",
+    progress = 70
 }: SummaryCardProps) {
 
     const themes = {
@@ -68,13 +76,38 @@ export default function SummaryCard({
             text: "text-orange-600",
             bar: "bg-orange-500",
             defaultIcon: <FiTrendingUp />
+        },
+        // New Indigo Theme
+        indigo: {
+            bg: "bg-white",
+            border: "border-indigo-100",
+            iconBg: "bg-indigo-50",
+            text: "text-indigo-600",
+            bar: "bg-indigo-500",
+            defaultIcon: <FiPhoneCall />
+        },
+        // New Slate Theme
+        slate: {
+            bg: "bg-white",
+            border: "border-slate-200",
+            iconBg: "bg-slate-100",
+            text: "text-slate-600",
+            bar: "bg-slate-400",
+            defaultIcon: <FiAlertCircle />
         }
     };
 
     const theme = themes[color] || themes.purple;
 
     const isNegative = trend?.includes("-");
-    const isNeutral = trend?.toLowerCase().includes("live") || trend?.toLowerCase().includes("awaiting");
+    const isNeutral =
+        trend?.toLowerCase().includes("live") ||
+        trend?.toLowerCase().includes("awaiting") ||
+        trend?.toLowerCase().includes("system") ||
+        trend?.toLowerCase().includes("efficiency") ||
+        trend?.toLowerCase().includes("no answer") || // Added for your "Not Pick" case
+        trend?.toLowerCase().includes("talked") ||    // Added for your "Contacted" case
+        trend?.toLowerCase().includes("rate");
 
     return (
         <div className={`group relative overflow-hidden ${theme.bg} p-6 rounded-[2.5rem] border ${theme.border} shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300`}>
@@ -111,14 +144,13 @@ export default function SummaryCard({
             <div className="mt-8 flex items-center gap-4 relative z-10">
                 <div className="flex-1 h-2 bg-slate-100/50 rounded-full overflow-hidden">
                     <div
-                        className={`h-full rounded-full transition-all duration-1000 ease-out ${theme.bar} opacity-60 group-hover:opacity-100 group-hover:scale-x-105 origin-left`}
-                        style={{ width: isNegative ? "35%" : "70%" }}
+                        className={`h-full rounded-full transition-all duration-1000 ease-out ${theme.bar} opacity-60 group-hover:opacity-100 origin-left`}
+                        style={{ width: `${progress}%` }}
                     ></div>
                 </div>
 
                 <div className={`${theme.iconBg} ${theme.text} p-2.5 rounded-2xl shadow-sm group-hover:scale-110 group-hover:rotate-6 transition-all duration-500`}>
                     <div className="text-lg">
-                        {/* 2. Priority: Passed icon > Default theme icon */}
                         {icon || theme.defaultIcon}
                     </div>
                 </div>

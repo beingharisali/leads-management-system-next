@@ -1,7 +1,29 @@
 import http from "./http"; // axios instance
 
-// Type ko update kiya taake 'custom' aur dynamic strings bhi allow hon
+// Type definition
 type Filter = "day" | "week" | "month" | "custom" | string;
+
+/**
+ * Helper to parse filter strings into clean Axios params
+ * Converts "custom&start=2024-01-01&end=2024-01-10" 
+ * into { filter: "custom", start: "2024-01-01", end: "2024-01-10" }
+ */
+const buildParams = (filter?: Filter) => {
+    let params: any = {};
+    if (!filter) return params;
+
+    if (typeof filter === "string" && filter.includes("&")) {
+        const parts = filter.split("&");
+        params.filter = parts[0]; // "custom"
+        parts.slice(1).forEach((part) => {
+            const [key, value] = part.split("=");
+            if (key && value) params[key] = value;
+        });
+    } else {
+        params.filter = filter;
+    }
+    return params;
+};
 
 /* ===================== CSR ===================== */
 
@@ -14,7 +36,7 @@ export const getCSRLeads = async () => {
 // CSR: Get their own dashboard stats
 export const getCSRStats = async (filter?: Filter) => {
     const res = await http.get("/dashboard/csr-stats", {
-        params: filter ? { filter } : {},
+        params: buildParams(filter),
     });
     return res.data;
 };
@@ -24,8 +46,7 @@ export const getCSRStats = async (filter?: Filter) => {
 // Admin dashboard stats
 export const getAdminStats = async (filter?: Filter) => {
     const res = await http.get("/dashboard/admin-stats", {
-        // Agar filter string hai toh axios usey query param mein sahi bhejega
-        params: filter ? { filter } : {},
+        params: buildParams(filter),
     });
     return res.data;
 };
@@ -39,25 +60,19 @@ export const getLeadsByCSR = async (csrId: string) => {
 // Admin: Get CSR stats by CSR ID
 export const getCSRStatsByAdmin = async (csrId: string, filter?: Filter) => {
     const res = await http.get(`/dashboard/csr-stats/${csrId}`, {
-        params: filter ? { filter } : {},
+        params: buildParams(filter),
     });
     return res.data;
 };
 
 /* ===================== LEADS ===================== */
 
-// Admin & CSR: get leads by role
 export const getLeadsByRole = async (role: "admin" | "csr") => {
-    if (role === "admin") {
-        const res = await http.get("/lead/get-all-leads");
-        return res.data.data;
-    } else {
-        const res = await http.get("/lead/csr");
-        return res.data.data;
-    }
+    const endpoint = role === "admin" ? "/lead/get-all-leads" : "/lead/csr";
+    const res = await http.get(endpoint);
+    return res.data.data;
 };
 
-// Create lead
 export const createLead = async (payload: {
     name: string;
     phone: string;
@@ -68,7 +83,6 @@ export const createLead = async (payload: {
     return res.data.data;
 };
 
-// Update lead
 export const updateLead = async (id: string, payload: {
     name?: string;
     phone?: string;
@@ -79,19 +93,16 @@ export const updateLead = async (id: string, payload: {
     return res.data.data;
 };
 
-// Delete lead
 export const deleteLead = async (id: string) => {
     const res = await http.delete(`/lead/delete-leads/${id}`);
     return res.data;
 };
 
-// Convert lead to sale
 export const convertLeadToSale = async (leadId: string, amount: number) => {
     const res = await http.post(`/lead/convert-to-sale/${leadId}`, { amount });
     return res.data.data;
 };
 
-// Upload Excel leads
 export const uploadExcelLeads = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
