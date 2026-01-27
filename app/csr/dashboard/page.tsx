@@ -15,10 +15,10 @@ import Loading from "@/components/Loading";
 import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
-// Note: XLSX import remove kar sakte hain agar kahin aur use nahi ho raha
 import {
     FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
-    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck
+    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck,
+    FiChevronLeft, FiChevronRight // New Icons for Pagination
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "contacted" | "interested" | "converted" | "sale" | "rejected" | "follow-up" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -44,6 +44,10 @@ export default function CSRDashboard() {
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // --- Pagination States ---
+    const [currentPage, setCurrentPage] = useState(1);
+    const leadsPerPage = 50;
 
     // Filtering States
     const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month" | "custom">("all");
@@ -72,33 +76,29 @@ export default function CSRDashboard() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    // --- UPDATED: Excel Import Logic (Direct File Upload) ---
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter, dateFilter, customDates]);
+
+    // --- Excel Import Logic ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        // Simple validation
         const validTypes = ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv"];
         if (!validTypes.includes(file.type) && !file.name.endsWith(".csv")) {
             toast.error("Please upload a valid Excel or CSV file");
             return;
         }
-
         const tid = toast.loading("Uploading leads to server...");
         try {
             const userId = await getUserId();
             if (!userId) throw new Error("User session not found");
-
-            // Hum seedha File aur UserId bhej rahe hain API ko
-            // API service isse FormData bana kar backend ko degi
             await bulkInsertLeads(file, userId);
-
             toast.success("Leads imported and assigned to you!", { id: tid });
-            fetchData(true); // Refresh table
-
+            fetchData(true);
             if (fileInputRef.current) fileInputRef.current.value = "";
         } catch (err: any) {
-            console.error("Upload Error:", err);
             toast.error(err.message || "Upload failed", { id: tid });
         }
     };
@@ -127,10 +127,16 @@ export default function CSRDashboard() {
                 end.setHours(23, 59, 59);
                 matchesDate = leadDate >= start && leadDate <= end;
             }
-
             return matchesSearch && matchesStatus && matchesDate;
         });
     }, [leads, searchTerm, dateFilter, statusFilter, customDates]);
+
+    // --- PAGINATION CALCULATION ---
+    const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
+    const paginatedLeads = useMemo(() => {
+        const startIndex = (currentPage - 1) * leadsPerPage;
+        return filteredLeads.slice(startIndex, startIndex + leadsPerPage);
+    }, [filteredLeads, currentPage]);
 
     const metrics = useMemo(() => {
         const getCount = (status: string) => filteredLeads.filter(l => l.status.toLowerCase() === status).length;
@@ -191,11 +197,12 @@ export default function CSRDashboard() {
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                         <div>
                             <h1 className="text-3xl font-black text-slate-900">CSR Dashboard</h1>
-                            <p className="text-slate-500 text-sm font-medium">Monitoring {filteredLeads.length} leads</p>
+                            <p className="text-slate-500 text-sm font-medium">
+                                Showing {paginatedLeads.length} of {filteredLeads.length} leads
+                            </p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                            {/* Hidden File Input */}
                             <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" className="hidden" />
 
                             <button
@@ -274,7 +281,7 @@ export default function CSRDashboard() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                                {filteredLeads.length > 0 ? filteredLeads.map((lead) => (
+                                {paginatedLeads.length > 0 ? paginatedLeads.map((lead) => (
                                     <tr key={lead._id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4 text-xs font-medium text-slate-500">{new Date(lead.createdAt).toLocaleDateString('en-GB')}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
@@ -310,9 +317,56 @@ export default function CSRDashboard() {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination UI Controls */}
+                    {totalPages > 1 && (
+                        <div className="px-8 py-5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                Page <span className="text-slate-900">{currentPage}</span> of {totalPages}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 disabled:opacity-50 hover:bg-slate-50 transition-all"
+                                >
+                                    <FiChevronLeft size={20} />
+                                </button>
+
+                                <div className="flex items-center gap-1">
+                                    {[...Array(totalPages)].map((_, i) => {
+                                        const pageNum = i + 1;
+                                        // Display logic: show first, last, and pages around current
+                                        if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    onClick={() => setCurrentPage(pageNum)}
+                                                    className={`w-10 h-10 rounded-xl text-xs font-black transition-all ${currentPage === pageNum ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                                            return <span key={pageNum} className="text-slate-300">...</span>;
+                                        }
+                                        return null;
+                                    })}
+                                </div>
+
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 disabled:opacity-50 hover:bg-slate-50 transition-all"
+                                >
+                                    <FiChevronRight size={20} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Create Modal */}
+                {/* Create Modal (Remains same as your original) */}
                 <AnimatePresence>
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
