@@ -1,30 +1,35 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { getLeadsByRole, updateLead, convertLeadToSale } from "@/services/lead.api";
-import { getCSRStats } from "@/services/dashboard.api";
+import {
+    getLeadsByRole,
+    updateLead,
+    convertLeadToSale,
+    createLead,
+    bulkInsertLeads
+} from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
-import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
 import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+// Note: XLSX import remove kar sakte hain agar kahin aur use nahi ho raha
 import {
-    FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch, FiMessageSquare
+    FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
+    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck
 } from "react-icons/fi";
 
-type FilterRange = "day" | "week" | "month" | "custom";
-
-// Backend Enum ke mutabiq types
-type LeadStatus = "new" | "contacted" | "interested" | "converted" | "sale" | "rejected" | "follow-up" | "paid" | "not pick" | "busy" | "wrong number";
+type LeadStatus = "new" | "contacted" | "interested" | "converted" | "sale" | "rejected" | "follow-up" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
 
 interface Lead {
     _id: string;
     name: string;
     course: string;
     phone: string;
+    city?: string;
+    source?: string;
     status: LeadStatus;
     remarks?: string;
     followUpDate?: string;
@@ -34,261 +39,322 @@ interface Lead {
 
 export default function CSRDashboard() {
     const router = useRouter();
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [leads, setLeads] = useState<Lead[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
-    const [filter, setFilter] = useState<FilterRange>("day");
     const [loading, setLoading] = useState(true);
-    const [startDate, setStartDate] = useState("");
-    const [endDate, setEndDate] = useState("");
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
-    const [stats, setStats] = useState({
-        totalLeads: 0,
-        totalSales: 0,
-        conversionRate: "0%",
-        leadsStats: { day: 0, week: 0, month: 0 },
-        salesStats: { day: 0, week: 0, month: 0 },
+    // Filtering States
+    const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month" | "custom">("all");
+    const [statusFilter, setStatusFilter] = useState<string>("all");
+    const [customDates, setCustomDates] = useState({ start: "", end: "" });
+
+    // New Lead State
+    const [newLead, setNewLead] = useState({
+        name: "", phone: "", city: "", source: "", course: "", remarks: ""
     });
 
-    // Options matching your backend enum
-    const statusOptions: LeadStatus[] = [
-        "new", "not pick", "interested", "follow-up", "paid",
-        "rejected", "busy", "wrong number", "contacted"
-    ];
+    const statusOptions = ["new", "not pick", "interested", "follow-up", "paid", "rejected", "busy", "wrong number", "contacted"];
 
     const fetchData = useCallback(async (isSilent = false) => {
         try {
             if (!isSilent) setLoading(true);
-            const [role, userId] = await Promise.all([getUserRole(), getUserId()]);
-            if (!role || !userId) {
-                logout();
-                return router.push("/login");
-            }
+            const role = await getUserRole();
+            const userId = await getUserId();
+            if (!role || !userId) { logout(); return router.push("/login"); }
 
-            const [leadsRes, statsRes]: [any, any] = await Promise.all([
-                getLeadsByRole(role, userId),
-                getCSRStats(filter === "custom" ? "month" : filter),
-            ]);
-
-            setLeads(Array.isArray(leadsRes) ? (leadsRes as Lead[]) : []);
-            if (statsRes) setStats(statsRes);
-        } catch (err: any) {
-            toast.error("Failed to load dashboard data");
-        } finally {
-            setLoading(false);
-        }
-    }, [filter, router]);
+            const leadsRes = await getLeadsByRole(role, undefined, userId);
+            setLeads(Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : []);
+        } catch (err) { toast.error("Failed to load dashboard data"); }
+        finally { setLoading(false); }
+    }, [router]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const handleUpdate = async (id: string, data: Partial<Lead>) => {
-        const tid = toast.loading("Processing...");
+    // --- UPDATED: Excel Import Logic (Direct File Upload) ---
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Simple validation
+        const validTypes = ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "text/csv"];
+        if (!validTypes.includes(file.type) && !file.name.endsWith(".csv")) {
+            toast.error("Please upload a valid Excel or CSV file");
+            return;
+        }
+
+        const tid = toast.loading("Uploading leads to server...");
         try {
-            const normalizedStatus = data.status?.toLowerCase().trim();
-            let updatedLeadData;
+            const userId = await getUserId();
+            if (!userId) throw new Error("User session not found");
 
-            // 1. Agar status 'paid' ya 'sale' hai toh special conversion API use hogi
-            if (normalizedStatus === "paid" || normalizedStatus === "sale") {
-                const amount = prompt("Enter Sale Amount:");
-                if (amount === null) {
-                    toast.dismiss(tid);
-                    return;
-                }
+            // Hum seedha File aur UserId bhej rahe hain API ko
+            // API service isse FormData bana kar backend ko degi
+            await bulkInsertLeads(file, userId);
 
-                const numericAmount = Number(amount);
-                if (!amount || isNaN(numericAmount)) {
-                    toast.error("Valid amount is required for Sale status", { id: tid });
-                    return;
-                }
+            toast.success("Leads imported and assigned to you!", { id: tid });
+            fetchData(true); // Refresh table
 
-                // Calling special function from lead.api.ts
-                updatedLeadData = await convertLeadToSale(id, numericAmount);
-            } else {
-                // 2. Baki sab options ke liye normal updateLead call hogi
-                // 'any' type use kiya hai taake payload.status par red line na aaye
-                const payload: any = { ...data };
-                if (data.status) payload.status = normalizedStatus;
-
-                updatedLeadData = await updateLead(id, payload);
-            }
-
-            // 3. Local State Update
-            setLeads(prev => prev.map(l =>
-                l._id === id ? { ...l, ...data, saleAmount: updatedLeadData?.saleAmount || l.saleAmount } : l
-            ));
-
-            toast.success("Lead Updated!", { id: tid });
-
-            // Stats update karein agar status change hua ho
-            if (data.status) fetchData(true);
+            if (fileInputRef.current) fileInputRef.current.value = "";
         } catch (err: any) {
-            console.error("Update Error:", err.message);
-            toast.error(err.message || "Update failed", { id: tid });
+            console.error("Upload Error:", err);
+            toast.error(err.message || "Upload failed", { id: tid });
         }
     };
 
+    // --- Core Filtering Logic ---
     const filteredLeads = useMemo(() => {
-        return leads.filter((lead) => {
-            const matchesSearch = lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || lead.phone.includes(searchTerm);
-            if (!matchesSearch) return false;
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
 
-            const leadDate = new Date(lead.createdAt).setHours(0, 0, 0, 0);
-            if (filter === "custom" && startDate && endDate) {
-                const start = new Date(startDate).setHours(0, 0, 0, 0);
-                const end = new Date(endDate).setHours(0, 0, 0, 0);
-                return leadDate >= start && leadDate <= end;
+        return leads.filter(l => {
+            const leadDate = new Date(l.createdAt);
+            const matchesSearch = (l.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || (l.phone || "").includes(searchTerm);
+            const matchesStatus = statusFilter === "all" || l.status.toLowerCase() === statusFilter.toLowerCase();
+
+            let matchesDate = true;
+            if (dateFilter === "today") matchesDate = leadDate >= startOfDay;
+            else if (dateFilter === "week") {
+                const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
+                matchesDate = leadDate >= weekAgo;
+            } else if (dateFilter === "month") {
+                const monthAgo = new Date(); monthAgo.setMonth(now.getMonth() - 1);
+                matchesDate = leadDate >= monthAgo;
+            } else if (dateFilter === "custom" && customDates.start && customDates.end) {
+                const start = new Date(customDates.start);
+                const end = new Date(customDates.end);
+                end.setHours(23, 59, 59);
+                matchesDate = leadDate >= start && leadDate <= end;
             }
 
-            const diffInDays = (Date.now() - leadDate) / (1000 * 3600 * 24);
-            if (filter === "day") return diffInDays <= 1;
-            if (filter === "week") return diffInDays <= 7;
-            if (filter === "month") return diffInDays <= 30;
-            return true;
+            return matchesSearch && matchesStatus && matchesDate;
         });
-    }, [leads, searchTerm, filter, startDate, endDate]);
+    }, [leads, searchTerm, dateFilter, statusFilter, customDates]);
 
-    const myMetrics = useMemo(() => {
-        const sales = filteredLeads.filter(l => l.status.toLowerCase() === "paid" || l.status.toLowerCase() === "sale");
-        const revenue = sales.reduce((sum, l) => sum + (l.saleAmount || 0), 0);
-        const rate = filteredLeads.length > 0 ? ((sales.length / filteredLeads.length) * 100).toFixed(1) + "%" : "0%";
-        return { revenue, salesCount: sales.length, rate };
+    const metrics = useMemo(() => {
+        const getCount = (status: string) => filteredLeads.filter(l => l.status.toLowerCase() === status).length;
+        const sales = filteredLeads.filter(l => ["paid", "sale"].includes(l.status.toLowerCase()));
+        const totalRevenue = sales.reduce((sum, l) => sum + (l.saleAmount || 0), 0);
+
+        return {
+            total: filteredLeads.length,
+            revenue: totalRevenue,
+            paid: sales.length,
+            newLeads: getCount("new"),
+            notPick: getCount("not pick"),
+            followUp: getCount("follow-up"),
+            rejected: getCount("rejected"),
+            contacted: getCount("contacted"),
+        };
     }, [filteredLeads]);
+
+    const handleUpdate = async (id: string, data: Partial<Lead>) => {
+        const tid = toast.loading("Updating...");
+        try {
+            const normalizedStatus = data.status?.toLowerCase().trim();
+            let updatedLeadData;
+            if (normalizedStatus === "paid" || normalizedStatus === "sale") {
+                const amount = prompt("Enter Sale Amount:");
+                if (!amount) { toast.dismiss(tid); return; }
+                updatedLeadData = await convertLeadToSale(id, Number(amount));
+            } else {
+                updatedLeadData = await updateLead(id, data);
+            }
+            setLeads(prev => prev.map(l => l._id === id ? { ...l, ...data, saleAmount: updatedLeadData?.saleAmount || l.saleAmount } : l));
+            toast.success("Success", { id: tid });
+        } catch (err) { toast.error("Update failed", { id: tid }); }
+    };
+
+    const handleAddLead = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const tid = toast.loading("Adding...");
+        try {
+            const userId = await getUserId();
+            await createLead({ ...newLead, assignedTo: userId } as any);
+            toast.success("Added!", { id: tid });
+            setIsModalOpen(false);
+            setNewLead({ name: "", phone: "", city: "", source: "", course: "", remarks: "" });
+            fetchData(true);
+        } catch (err) { toast.error("Failed", { id: tid }); }
+    };
 
     if (loading) return <Loading />;
 
     return (
         <ProtectedRoute role="csr">
             <Toaster position="top-right" />
-            <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10 font-sans">
+            <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
 
-                {/* --- Header --- */}
-                <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">CSR Dashboard</h1>
-                    <div className="flex items-center gap-3 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-64">
-                            <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input
-                                placeholder="Search leads..."
-                                className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white border-none shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
+                {/* Header Section */}
+                <div className="max-w-[1600px] mx-auto mb-8">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+                        <div>
+                            <h1 className="text-3xl font-black text-slate-900">CSR Dashboard</h1>
+                            <p className="text-slate-500 text-sm font-medium">Monitoring {filteredLeads.length} leads</p>
                         </div>
-                        <button onClick={() => logout()} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm hover:bg-rose-50 transition-all">
-                            <FiLogOut size={20} />
-                        </button>
-                    </div>
-                </div>
 
-                {/* --- Metrics --- */}
-                <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    <SummaryCard title="Leads Found" value={filteredLeads.length} icon={<FiPhone />} color="blue" />
-                    <SummaryCard title="Revenue" value={`$${myMetrics.revenue.toLocaleString()}`} icon={<FiDollarSign />} color="green" />
-                    <SummaryCard title="Conv. Rate" value={myMetrics.rate} icon={<FiCheckCircle />} color="purple" />
-                </div>
+                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                            {/* Hidden File Input */}
+                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" className="hidden" />
 
-                {/* --- Filters --- */}
-                <div className="max-w-[1600px] mx-auto flex flex-wrap items-center gap-4 bg-white p-5 rounded-[2rem] shadow-sm mb-8">
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                        {(["day", "week", "month", "custom"] as const).map((t) => (
                             <button
-                                key={t}
-                                onClick={() => setFilter(t)}
-                                className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${filter === t ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}
+                                onClick={() => fileInputRef.current?.click()}
+                                className="px-5 py-3 bg-emerald-500 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all"
                             >
-                                {t.toUpperCase()}
+                                <FiUploadCloud /> Import Excel
                             </button>
-                        ))}
+
+                            <div className="relative flex-1 md:w-48">
+                                <FiFilter className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <select
+                                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white shadow-sm outline-none border-none appearance-none font-bold text-slate-700 text-sm"
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                >
+                                    <option value="all">All Status</option>
+                                    {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="relative flex-1 md:w-64">
+                                <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    placeholder="Search by name/phone..."
+                                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
+                            <button onClick={logout} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm border border-slate-100"><FiLogOut size={20} /></button>
+                        </div>
                     </div>
 
-                    {filter === "custom" && (
-                        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2">
-                            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-slate-50 border-none rounded-lg p-2 text-xs font-bold text-slate-600 outline-none ring-1 ring-slate-200" />
-                            <span className="text-slate-400 text-xs font-bold px-1">TO</span>
-                            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-slate-50 border-none rounded-lg p-2 text-xs font-bold text-slate-600 outline-none ring-1 ring-slate-200" />
-                        </motion.div>
-                    )}
+                    {/* Date Filters */}
+                    <div className="mt-6 flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 w-fit">
+                        {['all', 'today', 'week', 'month'].map((f) => (
+                            <button key={f} onClick={() => setDateFilter(f as any)} className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all ${dateFilter === f ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>{f}</button>
+                        ))}
+                        <div className="h-6 w-[1px] bg-slate-200 mx-2" />
+                        <div className="flex items-center gap-2 pr-2">
+                            <FiCalendar className="text-slate-400 ml-2" />
+                            <input type="date" className="bg-transparent text-xs font-bold text-slate-600" onChange={(e) => { setCustomDates({ ...customDates, start: e.target.value }); setDateFilter('custom'); }} />
+                            <span className="text-slate-300">to</span>
+                            <input type="date" className="bg-transparent text-xs font-bold text-slate-600" onChange={(e) => { setCustomDates({ ...customDates, end: e.target.value }); setDateFilter('custom'); }} />
+                        </div>
+                    </div>
                 </div>
 
-                {/* --- Table --- */}
-                <div className="max-w-[1600px] mx-auto bg-white rounded-[2.5rem] shadow-sm overflow-hidden border border-slate-100">
+                {/* Summary Metrics Grid */}
+                <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <SummaryCard title="Revenue" value={`$${metrics.revenue}`} icon={<FiDollarSign />} color="green" />
+                    <SummaryCard title="New Leads" value={metrics.newLeads.toString()} icon={<FiPlus />} color="blue" />
+                    <SummaryCard title="Follow-Up" value={metrics.followUp.toString()} icon={<FiClock />} color="purple" />
+                    <SummaryCard title="Not Picked" value={metrics.notPick.toString()} icon={<FiPhone />} color="orange" />
+                    <SummaryCard title="Rejected" value={metrics.rejected.toString()} icon={<FiSlash />} color="orange" />
+                    <SummaryCard title="Contacted" value={metrics.contacted.toString()} icon={<FiUserCheck />} color="blue" />
+                    <SummaryCard title="Paid Sales" value={metrics.paid.toString()} icon={<FiCheckCircle />} color="green" />
+                    <SummaryCard title="Total Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
+                </div>
+
+                {/* Main Table */}
+                <div className="max-w-[1600px] mx-auto bg-white rounded-[2rem] shadow-sm overflow-hidden border border-slate-100">
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-slate-50/50 text-slate-400 text-[10px] uppercase tracking-widest font-black">
-                                    <th className="px-6 py-6">Date</th>
-                                    <th className="px-6 py-6">Name</th>
-                                    <th className="px-6 py-6">Number</th>
-                                    <th className="px-6 py-6">Course</th>
-                                    <th className="px-6 py-6">Status</th>
-                                    <th className="px-6 py-6">Remarks</th>
-                                    <th className="px-6 py-6">Follow-up</th>
-                                    <th className="px-6 py-6 text-center">Amount</th>
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest">
+                                <tr>
+                                    <th className="px-6 py-5">Date</th>
+                                    <th className="px-6 py-5">Lead Name</th>
+                                    <th className="px-6 py-5">Phone</th>
+                                    <th className="px-6 py-5">City/Source</th>
+                                    <th className="px-6 py-5">Status</th>
+                                    <th className="px-6 py-5">Remarks</th>
+                                    <th className="px-6 py-5 text-center">Amount</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                                {filteredLeads.map((lead) => (
-                                    <tr key={lead._id} className="hover:bg-slate-50/50 transition-all">
-                                        <td className="px-6 py-5 text-xs text-slate-500 font-medium">
-                                            {new Date(lead.createdAt).toLocaleDateString('en-GB')}
+                                {filteredLeads.length > 0 ? filteredLeads.map((lead) => (
+                                    <tr key={lead._id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4 text-xs font-medium text-slate-500">{new Date(lead.createdAt).toLocaleDateString('en-GB')}</td>
+                                        <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
+                                        <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{lead.source || 'N/A'}</div>
+                                            <div className="text-xs font-semibold text-slate-600">{lead.city || 'No City'}</div>
                                         </td>
-                                        <td className="px-6 py-5 font-bold text-slate-800">{lead.name}</td>
-                                        <td className="px-6 py-5 text-sm font-semibold text-blue-600">{lead.phone}</td>
-                                        <td className="px-6 py-5 text-sm text-slate-600 font-medium">{lead.course}</td>
-                                        <td className="px-6 py-5">
+                                        <td className="px-6 py-4">
                                             <select
                                                 value={lead.status.toLowerCase()}
-                                                onChange={(e) => handleUpdate(lead._id, { status: e.target.value as LeadStatus })}
-                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 cursor-pointer
-                                                    ${lead.status.toLowerCase() === 'paid' || lead.status.toLowerCase() === 'sale' ? 'bg-green-100 text-green-700' :
-                                                        lead.status.toLowerCase() === 'interested' ? 'bg-blue-100 text-blue-700' :
-                                                            lead.status.toLowerCase() === 'not pick' || lead.status.toLowerCase() === 'busy' ? 'bg-orange-100 text-orange-700' :
-                                                                'bg-slate-100 text-slate-600'}`}
+                                                onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
+                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 
+                                                    ${lead.status === 'paid' ? 'bg-green-100 text-green-700' :
+                                                        lead.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
                                             </select>
                                         </td>
-                                        <td className="px-6 py-5">
-                                            <div className="flex items-center gap-2">
-                                                <FiMessageSquare className="text-slate-300" />
-                                                <input
-                                                    defaultValue={lead.remarks}
-                                                    onBlur={(e) => {
-                                                        if (e.target.value !== lead.remarks) {
-                                                            handleUpdate(lead._id, { remarks: e.target.value });
-                                                        }
-                                                    }}
-                                                    placeholder="Add note..."
-                                                    className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm text-slate-600 w-full transition-all"
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-5">
+                                        <td className="px-6 py-4">
                                             <input
-                                                type="date"
-                                                defaultValue={lead.followUpDate ? lead.followUpDate.split('T')[0] : ""}
-                                                onChange={(e) => handleUpdate(lead._id, { followUpDate: e.target.value })}
-                                                className="bg-slate-50 border-none text-[11px] font-bold text-slate-500 rounded-lg p-1 outline-none focus:ring-1 focus:ring-blue-400"
+                                                defaultValue={lead.remarks}
+                                                onBlur={(e) => e.target.value !== lead.remarks && handleUpdate(lead._id, { remarks: e.target.value })}
+                                                className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm w-full"
+                                                placeholder="Add note..."
                                             />
                                         </td>
-                                        <td className="px-6 py-5 text-center font-bold text-slate-700">
-                                            {lead.saleAmount ? <span className="text-green-600">${lead.saleAmount}</span> : "-"}
-                                        </td>
+                                        <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `$${lead.saleAmount}` : "-"}</td>
                                     </tr>
-                                ))}
+                                )) : (
+                                    <tr><td colSpan={7} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                {/* --- Graphs --- */}
-                <div className="max-w-[1600px] mx-auto grid lg:grid-cols-2 gap-8 mt-10">
-                    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-                        <CSRStatsChart title="Lead Generation Trend" day={stats.leadsStats.day} week={stats.leadsStats.week} month={stats.leadsStats.month} />
-                    </div>
-                    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-                        <CSRStatsChart title="Sales Conversion Trend" day={stats.salesStats.day} week={stats.salesStats.week} month={stats.salesStats.month} />
-                    </div>
-                </div>
+                {/* Create Modal */}
+                <AnimatePresence>
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-white rounded-[2.5rem] w-full max-w-xl overflow-hidden shadow-2xl">
+                                <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
+                                    <div>
+                                        <h2 className="text-xl font-bold">Create New Lead</h2>
+                                        <p className="text-slate-400 text-xs">Fill in the lead details manually</p>
+                                    </div>
+                                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><FiX size={20} /></button>
+                                </div>
+                                <form onSubmit={handleAddLead} className="p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Full Name</label>
+                                        <input placeholder="Ex: John Doe" className="w-full p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={newLead.name} onChange={e => setNewLead({ ...newLead, name: e.target.value })} required />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Phone Number</label>
+                                        <input placeholder="Ex: 03001234567" className="w-full p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={newLead.phone} onChange={e => setNewLead({ ...newLead, phone: e.target.value })} required />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">City</label>
+                                        <input placeholder="Ex: Lahore" className="w-full p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={newLead.city} onChange={e => setNewLead({ ...newLead, city: e.target.value })} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Course</label>
+                                        <input placeholder="Ex: Web Development" className="w-full p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={newLead.course} onChange={e => setNewLead({ ...newLead, course: e.target.value })} />
+                                    </div>
+                                    <div className="md:col-span-2 space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Source</label>
+                                        <input placeholder="Ex: Facebook, Instagram, Referral" className="w-full p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={newLead.source} onChange={e => setNewLead({ ...newLead, source: e.target.value })} />
+                                    </div>
+                                    <div className="md:col-span-2 space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-2">Remarks</label>
+                                        <textarea placeholder="Any specific details..." className="w-full p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all h-24 resize-none" value={newLead.remarks} onChange={e => setNewLead({ ...newLead, remarks: e.target.value })} />
+                                    </div>
+                                    <button type="submit" className="md:col-span-2 mt-4 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">Save Lead Details</button>
+                                </form>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
             </div>
         </ProtectedRoute>
     );

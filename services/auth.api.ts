@@ -66,28 +66,27 @@ export const createCSR = async (data: { name: string; email: string; password: s
 };
 
 /**
- * 4. UPDATE CSR STATUS (ULTIMATE SYNC VERSION)
- * Toggles status strictly by normalizing the input.
+ * 4. UPDATE CSR STATUS (FIXED VERSION)
+ * Dashboard se targetStatus (active ya inactive) aa raha hai.
+ * Hum usey mazeed toggle nahi karenge, seedha backend bhejenge.
  */
-export const updateCSRStatus = async (csrId: string, currentStatus: string): Promise<AuthResponse> => {
+export const updateCSRStatus = async (csrId: string, targetStatus: string): Promise<AuthResponse> => {
   if (!csrId) throw new Error("Missing Agent ID.");
 
   try {
-    // Sabse pehle status ko normalize karein (space aur case issues khatam karne ke liye)
-    const normalizedInput = String(currentStatus || "active").toLowerCase().trim();
+    // Dashboard se pehle hi 'inactive' ya 'active' decide hoke aa raha hai
+    // Isliye hum yahan mazeed switch nahi karenge.
+    const finalStatus = String(targetStatus).toLowerCase().trim();
 
-    // Toggle: Agar input active hai to har haal mein 'inactive' bhejein, warna 'active'
-    const newStatus = normalizedInput === "active" ? "inactive" : "active";
-
-    console.log(`[SYNC INITIATED] ID: ${csrId} | From: ${normalizedInput} | To: ${newStatus}`);
+    console.log(`[TERMINAL SYNC] Sending to Backend -> ID: ${csrId} | Status: ${finalStatus}`);
 
     const res = await http.patch(
       `/auth/update-status/${csrId}`,
-      { status: newStatus },
+      { status: finalStatus }, // Seedha target status bhejien
       getAuthHeaders()
     );
 
-    console.log(`[SYNC SUCCESS] Server confirmed status: ${res.data?.user?.status || newStatus}`);
+    console.log(`[SYNC SUCCESS] Backend updated to: ${res.data?.user?.status}`);
     return res.data;
   } catch (err: any) {
     const errorMsg = err.response?.data?.msg || err.response?.data?.message || "Status sync failed";

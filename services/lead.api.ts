@@ -1,7 +1,20 @@
 import http from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
-export type LeadStatus = "New" | "Not Pick" | "Not Interested" | "Interested" | "Paid" | "Sale" | "active" | "inactive";
+export type LeadStatus =
+  | "New"
+  | "Not Pick"
+  | "Not Interested"
+  | "Interested"
+  | "Paid"
+  | "Sale"
+  | "active"
+  | "inactive"
+  | "Follow-up"
+  | "Rejected"
+  | "Busy"
+  | "Wrong Number"
+  | "Contacted";
 
 export interface Lead {
   _id: string;
@@ -15,6 +28,7 @@ export interface Lead {
   createdAt: string;
   saleAmount?: number;
   source?: string;
+  city?: string;
 }
 
 export interface LeadPayload {
@@ -38,43 +52,36 @@ interface ApiResponse<T> {
   count?: number;
 }
 
-/* ===================== HELPER: NORMALIZE STATUS (FIXED) ===================== */
+/* ===================== HELPER: NORMALIZE STATUS ===================== */
 const normalizeLeads = (leads: any[]): Lead[] => {
   if (!Array.isArray(leads)) return [];
   return leads.map((l) => {
-    // Agar status 'active' ya 'inactive' hai toh capitalize nahi karna (taake dashboard na tootay)
     const rawStatus = l.status?.toLowerCase() || "new";
     let finalStatus: LeadStatus;
 
     if (rawStatus === "active" || rawStatus === "inactive") {
       finalStatus = rawStatus as LeadStatus;
     } else {
-      // Baaki leads ke liye purana capitalization logic barkarar rakha hai
       finalStatus = (rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1)) as LeadStatus;
     }
 
-    return {
-      ...l,
-      status: finalStatus
-    };
+    return { ...l, status: finalStatus };
   });
 };
 
 /* ===================== CORE LEAD FUNCTIONS ===================== */
 
-/**
- * FETCH LEADS
- */
-export const getLeadsByRole = async (role: string, userId?: string): Promise<Lead[]> => {
+export const getLeads = async (params: {
+  search?: string;
+  filter?: string;
+  start?: string;
+  end?: string
+}): Promise<Lead[]> => {
   try {
-    const url = role === "csr" && userId ? `/lead/csr/${userId}` : "/lead";
-    const res = await http.get<ApiResponse<any[]>>(url);
-
+    const res = await http.get<ApiResponse<any[]>>("/lead", { params });
     if (res.data && res.data.success) {
-      const rawLeads = res.data.data || res.data.leads || [];
-      return normalizeLeads(rawLeads);
+      return normalizeLeads(res.data.data);
     }
-
     return [];
   } catch (err: any) {
     console.error("Fetch Leads Error:", err.message);
@@ -82,9 +89,24 @@ export const getLeadsByRole = async (role: string, userId?: string): Promise<Lea
   }
 };
 
-/**
- * CREATE LEAD
- */
+export const getLeadsByRole = async (role: string, filter?: string, userId?: string): Promise<Lead[]> => {
+  try {
+    const url = role === "csr" && userId ? `/lead/csr/${userId}` : "/lead";
+    const res = await http.get<ApiResponse<any[]>>(url, {
+      params: { filter }
+    });
+
+    if (res.data && res.data.success) {
+      const rawLeads = res.data.data || res.data.leads || [];
+      return normalizeLeads(rawLeads);
+    }
+    return [];
+  } catch (err: any) {
+    console.error("Fetch Role Leads Error:", err.message);
+    return [];
+  }
+};
+
 export const createLead = async (data: LeadPayload): Promise<Lead> => {
   try {
     const payload = {
@@ -98,9 +120,6 @@ export const createLead = async (data: LeadPayload): Promise<Lead> => {
   }
 };
 
-/**
- * UPDATE LEAD
- */
 export const updateLead = async (id: string, data: Partial<LeadPayload>): Promise<Lead> => {
   try {
     const res = await http.patch<ApiResponse<Lead>>(`/lead/${id}`, data);
@@ -110,13 +129,9 @@ export const updateLead = async (id: string, data: Partial<LeadPayload>): Promis
   }
 };
 
-/**
- * DELETE SINGLE LEAD
- */
-export const deleteLead = async (id: string): Promise<{ success: boolean; message: string }> => {
+export const deleteLead = async (id: string): Promise<void> => {
   try {
-    const res = await http.delete<ApiResponse<null>>(`/lead/${id}`);
-    return { success: res.data.success, message: res.data.message };
+    await http.delete(`/lead/${id}`);
   } catch (err: any) {
     throw new Error(err.response?.data?.message || "Failed to delete lead");
   }
@@ -124,12 +139,11 @@ export const deleteLead = async (id: string): Promise<{ success: boolean; messag
 
 /* ===================== SPECIAL ACTIONS ===================== */
 
-export const deleteAllLeads = async (): Promise<{ success: boolean; message: string }> => {
+export const deleteAllLeads = async (): Promise<void> => {
   try {
-    const res = await http.delete<ApiResponse<null>>("/lead/admin/delete-all");
-    return { success: res.data.success, message: res.data.message };
+    await http.delete("/lead/delete/all");
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Wipe failed");
+    throw new Error(err.response?.data?.message || "Failed to delete all leads");
   }
 };
 
@@ -142,17 +156,29 @@ export const convertLeadToSale = async (id: string, saleAmount: number): Promise
   }
 };
 
-export const bulkInsertLeads = async (file: File, csrId: string): Promise<any> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("csrId", csrId);
-
+/**
+ * FIXED: Bulk Insert Function
+ * Dono keys (csrId aur assignedTo) bhej raha hoon taake backend kisi bhi field ko pick kar sake.
+ */
+export const bulkInsertLeads = async (file: File, userId: string): Promise<any> => {
   try {
+    if (!userId) throw new Error("User ID is required for bulk upload");
+
+    const formData = new FormData();
+    formData.append("file", file); // Standard key for multer
+    formData.append("csrId", userId); // Key requested by your backend error
+    formData.append("assignedTo", userId); // Fallback key
+
     const res = await http.post("/lead/bulk/upload-excel", formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: {
+        "Content-Type": "multipart/form-data"
+      },
     });
+
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Excel upload failed");
+    // Console mein exact error check karne ke liye
+    console.error("API Bulk Upload Error Detail:", err.response?.data);
+    throw new Error(err.response?.data?.message || "Excel upload failed on server");
   }
 };
