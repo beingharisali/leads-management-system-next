@@ -182,6 +182,20 @@ export default function AdminDashboardPage() {
         } catch (err: any) { toast.error(err.message, { id: toastId }); } finally { setUploading(false); }
     };
 
+    // FIXED: Delete All Leads Function
+    const handleDeleteAll = async () => {
+        if (!confirm("Are you sure you want to delete ALL leads? This action cannot be undone.")) return;
+
+        const toastId = toast.loading("Deleting all leads...");
+        try {
+            await deleteAllLeads();
+            toast.success("All leads deleted successfully", { id: toastId });
+            fetchDashboardData(true);
+        } catch (err: any) {
+            toast.error(err.message || "Failed to delete leads", { id: toastId });
+        }
+    };
+
     /* ================= CALCULATIONS (DATE FILTER LOGIC) ================= */
 
     const stats = useMemo(() => {
@@ -379,7 +393,7 @@ export default function AdminDashboardPage() {
                                     <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                                     <input type="text" placeholder="Search..." className="w-full pl-11 pr-4 py-3 bg-white border rounded-2xl text-sm font-bold outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                 </div>
-                                <button onClick={() => { if (confirm("Delete all leads?")) deleteAllLeads().then(() => fetchDashboardData(true)) }} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all">
+                                <button onClick={handleDeleteAll} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all">
                                     <FiTrash2 />
                                 </button>
                             </div>
