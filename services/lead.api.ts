@@ -89,9 +89,14 @@ export const getLeads = async (params: {
   }
 };
 
+/**
+ * UPDATED: Admin ke liye '/admin/all' use karega jo backend routes mein defined hai.
+ */
 export const getLeadsByRole = async (role: string, filter?: string, userId?: string): Promise<Lead[]> => {
   try {
-    const url = role === "csr" && userId ? `/lead/csr/${userId}` : "/lead";
+    // Admin ke liye endpoint '/lead/admin/all' banta hai (backend route list ke mutabiq)
+    const url = role === "admin" ? "/lead/admin/all" : (role === "csr" && userId ? `/lead/csr/${userId}` : "/lead");
+
     const res = await http.get<ApiResponse<any[]>>(url, {
       params: { filter }
     });
@@ -139,9 +144,12 @@ export const deleteLead = async (id: string): Promise<void> => {
 
 /* ===================== SPECIAL ACTIONS ===================== */
 
+/**
+ * FIXED: Route updated to match backend: router.delete("/admin/delete-all")
+ */
 export const deleteAllLeads = async (): Promise<void> => {
   try {
-    await http.delete("/lead/delete/all");
+    await http.delete("/lead/admin/delete-all");
   } catch (err: any) {
     throw new Error(err.response?.data?.message || "Failed to delete all leads");
   }
@@ -157,17 +165,16 @@ export const convertLeadToSale = async (id: string, saleAmount: number): Promise
 };
 
 /**
- * FIXED: Bulk Insert Function
- * Dono keys (csrId aur assignedTo) bhej raha hoon taake backend kisi bhi field ko pick kar sake.
+ * Bulk Insert Function (As per your requirement)
  */
 export const bulkInsertLeads = async (file: File, userId: string): Promise<any> => {
   try {
     if (!userId) throw new Error("User ID is required for bulk upload");
 
     const formData = new FormData();
-    formData.append("file", file); // Standard key for multer
-    formData.append("csrId", userId); // Key requested by your backend error
-    formData.append("assignedTo", userId); // Fallback key
+    formData.append("file", file);
+    formData.append("csrId", userId);
+    formData.append("assignedTo", userId);
 
     const res = await http.post("/lead/bulk/upload-excel", formData, {
       headers: {
@@ -177,7 +184,6 @@ export const bulkInsertLeads = async (file: File, userId: string): Promise<any> 
 
     return res.data;
   } catch (err: any) {
-    // Console mein exact error check karne ke liye
     console.error("API Bulk Upload Error Detail:", err.response?.data);
     throw new Error(err.response?.data?.message || "Excel upload failed on server");
   }
