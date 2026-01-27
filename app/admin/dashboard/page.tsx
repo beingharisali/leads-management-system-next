@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     FiPlus, FiUploadCloud, FiLogOut, FiTrendingUp,
     FiRefreshCw, FiTrash2, FiUserPlus, FiX, FiSearch, FiFilter,
-    FiCheckCircle, FiDollarSign, FiUsers, FiActivity, FiPhoneCall, FiClock, FiXCircle, FiStar, FiAlertCircle, FiCalendar
+    FiCheckCircle, FiDollarSign, FiUsers, FiActivity, FiPhoneCall, FiClock, FiXCircle, FiStar, FiAlertCircle, FiCalendar,
+    FiChevronLeft, FiChevronRight
 } from "react-icons/fi";
 
 // APIs 
@@ -45,6 +46,10 @@ export default function AdminDashboardPage() {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
 
+    // --- Pagination State ---
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 50; // Yahan aap 50 leads set kar sakte hain
+
     // --- Search & Filter States ---
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
@@ -81,7 +86,6 @@ export default function AdminDashboardPage() {
         else setRefreshing(true);
 
         try {
-            // Agar custom filter hai toh stats ko manage karna hoga (Backend support lazmi hai custom stats ke liye)
             const [statsRes, leadsRes] = await Promise.all([
                 getAdminStats(activeGraphFilter),
                 getLeadsByRole("admin"),
@@ -190,7 +194,7 @@ export default function AdminDashboardPage() {
                 if (!customRange.start || !customRange.end) return true;
                 const startDate = new Date(customRange.start);
                 const endDate = new Date(customRange.end);
-                endDate.setHours(23, 59, 59); // Din ke aakhir tak
+                endDate.setHours(23, 59, 59);
                 return leadDate >= startDate && leadDate <= endDate;
             }
 
@@ -235,6 +239,19 @@ export default function AdminDashboardPage() {
         });
     }, [leads, selectedCSR, searchQuery, statusFilter]);
 
+    // --- PAGINATION LOGIC ---
+    const paginatedLeads = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredLeadsList.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredLeadsList, currentPage]);
+
+    const totalPages = Math.ceil(filteredLeadsList.length / itemsPerPage);
+
+    // Reset to page 1 when filter changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, statusFilter, selectedCSR]);
+
     if (loading && !data) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
 
@@ -268,7 +285,6 @@ export default function AdminDashboardPage() {
                             </button>
                         ))}
 
-                        {/* Custom Date Range Trigger */}
                         <div className="relative ml-1">
                             <button
                                 onClick={() => setShowDatePicker(!showDatePicker)}
@@ -345,7 +361,6 @@ export default function AdminDashboardPage() {
                 </aside>
 
                 <section className="col-span-12 lg:col-span-9 space-y-8">
-                    {/* Graph also uses the filter to display relevant data */}
                     <DashboardGraphs
                         leadsStats={data?.leadsStats}
                         salesStats={data?.salesStats}
@@ -369,12 +384,52 @@ export default function AdminDashboardPage() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Paginated Leads List */}
                         <CSRLeadsPanel
-                            leads={filteredLeadsList}
+                            leads={paginatedLeads}
                             selectedCSR={selectedCSR}
                             onConvertToSale={() => fetchDashboardData(true)}
                             onDeleteLead={() => fetchDashboardData(true)}
                         />
+
+                        {/* PAGINATION CONTROLS */}
+                        {totalPages > 1 && (
+                            <div className="p-6 bg-slate-50/50 border-t flex items-center justify-between">
+                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                    Showing {paginatedLeads.length} of {filteredLeadsList.length} leads
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        disabled={currentPage === 1}
+                                        onClick={() => setCurrentPage(p => p - 1)}
+                                        className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50 transition-all shadow-sm"
+                                    >
+                                        <FiChevronLeft size={20} />
+                                    </button>
+
+                                    <div className="flex items-center gap-1">
+                                        {[...Array(totalPages)].map((_, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => setCurrentPage(i + 1)}
+                                                className={`w-10 h-10 rounded-xl text-xs font-black transition-all ${currentPage === i + 1 ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}`}
+                                            >
+                                                {i + 1}
+                                            </button>
+                                        )).slice(Math.max(0, currentPage - 3), Math.min(totalPages, currentPage + 2))}
+                                    </div>
+
+                                    <button
+                                        disabled={currentPage === totalPages}
+                                        onClick={() => setCurrentPage(p => p + 1)}
+                                        className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50 transition-all shadow-sm"
+                                    >
+                                        <FiChevronRight size={20} />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </section>
             </div>
