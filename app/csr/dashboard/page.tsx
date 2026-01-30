@@ -255,7 +255,6 @@ export default function CSRDashboard() {
 
                 {/* Summary Metrics Grid */}
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <SummaryCard title="Revenue" value={`$${metrics.revenue}`} icon={<FiDollarSign />} color="green" />
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} icon={<FiPlus />} color="blue" />
                     <SummaryCard title="Follow-Up" value={metrics.followUp.toString()} icon={<FiClock />} color="purple" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} icon={<FiPhone />} color="orange" />
