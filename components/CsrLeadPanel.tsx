@@ -81,7 +81,7 @@ export default function CSRLeadsPanel({
 
             if (!matchesSearch) return false;
 
-            // 3. Logic: CSR Filter (Critical for Red Line Fix)
+            // 3. Logic: CSR Filter
             const leadCsrId = typeof lead.assignedTo === 'object' ? lead.assignedTo?._id : lead.assignedTo;
             if (selectedCSR && leadCsrId !== selectedCSR) return false;
 
@@ -118,7 +118,7 @@ export default function CSRLeadsPanel({
         const toastId = toast.loading("Processing conversion...");
         try {
             await convertLeadToSale(id, amount);
-            toast.success("Lead Converted!", { id: toastId });
+            toast.success("Lead Converted Successfully!", { id: toastId });
             onConvertToSale();
         } catch (err: any) {
             toast.error(err.message || "Failed to convert", { id: toastId });
@@ -158,6 +158,7 @@ export default function CSRLeadsPanel({
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-4 items-center">
+                        {/* Search Bar */}
                         <div className="relative w-full md:w-80 group">
                             <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
                             <input
@@ -169,14 +170,15 @@ export default function CSRLeadsPanel({
                             />
                         </div>
 
+                        {/* Period Select */}
                         <div className="flex bg-slate-100/50 p-1.5 rounded-2xl border border-slate-100 w-full md:w-auto overflow-x-auto">
                             {(['all', 'day', 'week', 'month', 'custom'] as const).map((t) => (
                                 <button
                                     key={t}
                                     onClick={() => setPeriod(t)}
                                     className={`px-5 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${period === t
-                                        ? "bg-white text-indigo-600 shadow-sm scale-105"
-                                        : "text-slate-500 hover:bg-white/50"
+                                            ? "bg-white text-indigo-600 shadow-sm scale-105"
+                                            : "text-slate-500 hover:bg-white/50"
                                         }`}
                                 >
                                     {t}
@@ -186,7 +188,7 @@ export default function CSRLeadsPanel({
                     </div>
                 </div>
 
-                {/* --- Custom Date Inputs --- */}
+                {/* Custom Date Inputs */}
                 <AnimatePresence>
                     {period === "custom" && (
                         <motion.div
@@ -197,14 +199,14 @@ export default function CSRLeadsPanel({
                         >
                             <input
                                 type="date"
-                                className="bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold outline-none"
+                                className="bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-indigo-500/20"
                                 value={customRange.start}
                                 onChange={(e) => setCustomRange(p => ({ ...p, start: e.target.value }))}
                             />
                             <span className="text-indigo-300 font-black text-[10px] uppercase">to</span>
                             <input
                                 type="date"
-                                className="bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold outline-none"
+                                className="bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-indigo-500/20"
                                 value={customRange.end}
                                 onChange={(e) => setCustomRange(p => ({ ...p, end: e.target.value }))}
                             />
@@ -216,8 +218,13 @@ export default function CSRLeadsPanel({
                 <div className="flex-1 overflow-x-auto custom-scrollbar">
                     {filteredLeads.length === 0 ? (
                         <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center">
-                            <FiFilter className="text-slate-200 text-6xl mb-4" />
-                            <h4 className="font-black text-slate-800 text-lg uppercase">No Data Found</h4>
+                            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
+                                <FiFilter className="text-slate-300 text-3xl" />
+                            </div>
+                            <h4 className="font-black text-slate-800 text-lg uppercase tracking-tight">No Data Found</h4>
+                            <p className="text-slate-400 text-xs font-bold max-w-[200px] mt-2 leading-relaxed">
+                                Try adjusting your filters or search terms to find what you're looking for.
+                            </p>
                         </div>
                     ) : (
                         <table className="w-full text-left border-separate border-spacing-y-3">
@@ -246,57 +253,70 @@ export default function CSRLeadsPanel({
                                                 exit={{ opacity: 0, scale: 0.95 }}
                                                 className={`group transition-all ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
                                             >
-                                                <td className="px-6 py-5 bg-slate-50 group-hover:bg-indigo-50/50 rounded-l-[1.5rem] border-y border-l border-slate-100">
+                                                {/* Date Column */}
+                                                <td className="px-6 py-5 bg-slate-50 group-hover:bg-indigo-50/50 transition-colors rounded-l-[1.5rem] border-y border-l border-slate-100">
                                                     <div className="flex flex-col">
                                                         <span className="text-[11px] font-black text-slate-700">
                                                             {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : "N/A"}
                                                         </span>
-                                                        <span className="text-[9px] text-slate-400 font-bold uppercase">{lead.createdAt ? new Date(lead.createdAt).getFullYear() : ""}</span>
+                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
+                                                            {lead.createdAt ? new Date(lead.createdAt).getFullYear() : ""}
+                                                        </span>
                                                     </div>
                                                 </td>
 
+                                                {/* Identity Column */}
                                                 <td className="px-6 py-5 bg-slate-50 group-hover:bg-indigo-50/50 border-y border-slate-100">
                                                     <p className="font-black text-slate-800 text-sm tracking-tight mb-1 truncate max-w-[150px]">{lead.name}</p>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-indigo-600 font-black">{lead.phone}</span>
-                                                        <span className="text-[8px] font-black uppercase text-slate-400">| {csrName}</span>
+                                                        <span className="h-1 w-1 bg-slate-300 rounded-full"></span>
+                                                        <span className="text-[8px] font-black uppercase text-slate-400">{csrName}</span>
                                                     </div>
                                                 </td>
 
+                                                {/* Product Column */}
                                                 <td className="px-6 py-5 bg-slate-50 group-hover:bg-indigo-50/50 border-y border-slate-100">
-                                                    <span className="text-[9px] font-black text-indigo-700 bg-white px-2 py-1 rounded-lg border border-indigo-100 uppercase">
-                                                        {lead.course || "General"}
-                                                    </span>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <span className="text-[9px] font-black text-indigo-700 bg-white px-2 py-1 rounded-lg border border-indigo-100 w-fit uppercase">
+                                                            {lead.course || "General"}
+                                                        </span>
+                                                        <div className="flex items-center gap-1.5 text-[8px] font-black text-rose-500 uppercase tracking-widest">
+                                                            <FiMapPin size={10} /> {lead.city || "Online"}
+                                                        </div>
+                                                    </div>
                                                 </td>
 
+                                                {/* Status Column */}
                                                 <td className="px-6 py-5 bg-slate-50 group-hover:bg-indigo-50/50 border-y border-slate-100">
                                                     {isSold ? (
-                                                        <div className="flex items-center gap-2 bg-emerald-500 text-white px-3 py-1.5 rounded-xl shadow-lg shadow-emerald-500/20 w-fit">
-                                                            <FiCheckCircle />
-                                                            <span className="text-[10px] font-black">Rs. {lead.saleAmount?.toLocaleString()}</span>
+                                                        <div className="flex items-center gap-3 bg-emerald-500 text-white p-1.5 pr-4 rounded-xl shadow-lg shadow-emerald-500/20 w-fit">
+                                                            <div className="bg-white/20 p-1.5 rounded-lg"><FiCheckCircle /></div>
+                                                            <span className="text-[10px] font-black tracking-tighter whitespace-nowrap">Rs. {lead.saleAmount?.toLocaleString()}</span>
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-1">
-                                                            <span className="text-[9px] font-black uppercase text-blue-600">{lead.status || 'Active'}</span>
-                                                            <p className="text-[9px] text-slate-400 italic line-clamp-1">{lead.remarks || "No notes..."}</p>
+                                                            <span className="text-[9px] font-black uppercase text-blue-600 tracking-[0.1em]">{lead.status || 'Active'}</span>
+                                                            <p className="text-[9px] text-slate-400 italic line-clamp-1 max-w-[180px]">{lead.remarks || "No notes..."}</p>
                                                         </div>
                                                     )}
                                                 </td>
 
+                                                {/* Actions Column */}
                                                 <td className="px-6 py-5 bg-slate-50 group-hover:bg-indigo-50/50 rounded-r-[1.5rem] border-y border-r border-slate-100 text-center">
                                                     <div className="flex items-center justify-center gap-2">
                                                         {!isSold && (
                                                             <button
                                                                 onClick={() => handleConvert(lead._id)}
                                                                 disabled={isProcessing}
-                                                                className="bg-slate-900 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                                                                className="bg-slate-900 hover:bg-indigo-600 text-white px-5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-90 flex items-center gap-2 disabled:bg-slate-300"
                                                             >
                                                                 {isProcessing ? <FiLoader className="animate-spin" /> : "Convert"}
                                                             </button>
                                                         )}
                                                         <button
                                                             onClick={() => handleDelete(lead._id)}
-                                                            className="text-slate-300 hover:text-rose-600 transition-all p-2"
+                                                            className="text-slate-300 hover:text-rose-600 transition-all p-2 hover:bg-rose-50 rounded-lg active:scale-90"
                                                         >
                                                             <FiTrash2 size={16} />
                                                         </button>
@@ -314,6 +334,7 @@ export default function CSRLeadsPanel({
 
             <style jsx>{`
                 .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
             `}</style>
         </div>
