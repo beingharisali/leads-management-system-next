@@ -21,7 +21,7 @@ import {
     FiChevronLeft, FiChevronRight // New Icons for Pagination
 } from "react-icons/fi";
 
-type LeadStatus = "new" | "contacted" | "interested" | "converted" | "sale" | "rejected" | "follow-up" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
+type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
 
 interface Lead {
     _id: string;
@@ -44,6 +44,7 @@ export default function CSRDashboard() {
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const notifiedLeadsRef = useRef<Record<string, boolean>>({});
 
     // --- Pagination States ---
     const [currentPage, setCurrentPage] = useState(1);
@@ -59,7 +60,7 @@ export default function CSRDashboard() {
         name: "", phone: "", city: "", source: "", course: "", remarks: ""
     });
 
-    const statusOptions = ["new", "not pick", "interested", "follow-up", "paid", "rejected", "busy", "wrong number", "contacted"];
+    const statusOptions = ["new", "not pick", "interested", "paid", "not interested", "busy", "wrong number",];
 
     const fetchData = useCallback(async (isSilent = false) => {
         try {
@@ -73,6 +74,61 @@ export default function CSRDashboard() {
         } catch (err) { toast.error("Failed to load dashboard data"); }
         finally { setLoading(false); }
     }, [router]);
+
+    useEffect(() => {
+        if (leads.length === 0) return;
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        leads.forEach(lead => {
+
+            if (lead.followUpDate && lead.followUpDate.split('T')[0] === todayStr && !notifiedLeadsRef.current[lead._id]) {
+
+                toast(`Reminder: Call ${lead.name} right now!`, {
+                    icon: '📞',
+                    duration: 6000,
+                    position: "top-center",
+                    style: {
+                        background: '#1E293B',
+                        color: '#fff',
+                        fontWeight: 'bold'
+                    }
+                });
+
+
+                notifiedLeadsRef.current[lead._id] = true;
+            }
+        });
+    }, [leads]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const now = new Date().getTime();
+            const oneHour = 60 * 60 * 1000;
+
+            setLeads(prevLeads => {
+                let hasChanges = false;
+
+                const updated = prevLeads.map(lead => {
+                    if (lead.status.toLowerCase() === "not pick") {
+                        const lastUpdateTime = new Date(lead.createdAt).getTime();
+
+                        if (now - lastUpdateTime >= oneHour) {
+                            hasChanges = true;
+                            updateLead(lead._id, { status: "new" }).catch(err => console.error(err));
+                            return { ...lead, status: "new" };
+                        }
+                    }
+                    return lead;
+                });
+
+
+                return hasChanges ? updated : prevLeads;
+            });
+        }, 60000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -150,8 +206,8 @@ export default function CSRDashboard() {
             newLeads: getCount("new"),
             notPick: getCount("not pick"),
             followUp: getCount("follow-up"),
-            rejected: getCount("rejected"),
-            contacted: getCount("contacted"),
+            notinterested: getCount("not interested"),
+
         };
     }, [filteredLeads]);
 
@@ -160,16 +216,48 @@ export default function CSRDashboard() {
         try {
             const normalizedStatus = data.status?.toLowerCase().trim();
             let updatedLeadData;
+
+
+            if (normalizedStatus && normalizedStatus !== "paid" && normalizedStatus !== "sale") {
+                data.saleAmount = null as any;
+            }
+
+
+            if (normalizedStatus && normalizedStatus !== "interested" && normalizedStatus !== "follow-up") {
+                data.followUpDate = null as any;
+            }
+
+
             if (normalizedStatus === "paid" || normalizedStatus === "sale") {
                 const amount = prompt("Enter Sale Amount:");
-                if (!amount) { toast.dismiss(tid); return; }
+                if (!amount) {
+                    toast.dismiss(tid);
+                    return;
+                }
                 updatedLeadData = await convertLeadToSale(id, Number(amount));
             } else {
                 updatedLeadData = await updateLead(id, data);
             }
-            setLeads(prev => prev.map(l => l._id === id ? { ...l, ...data, saleAmount: updatedLeadData?.saleAmount || l.saleAmount } : l));
+
+
+            setLeads(prev => prev.map(l =>
+                l._id === id
+                    ? {
+                        ...l,
+                        ...data,
+                        saleAmount: updatedLeadData?.saleAmount !== undefined ? updatedLeadData.saleAmount : data.saleAmount,
+                        followUpDate: updatedLeadData?.followUpDate !== undefined ? updatedLeadData.followUpDate : data.followUpDate
+                    }
+                    : l
+            ));
+
             toast.success("Success", { id: tid });
-        } catch (err) { toast.error("Update failed", { id: tid }); }
+            fetchData(true);
+
+        } catch (err) {
+            console.error("Update error detailed logs:", err);
+            toast.error("Update failed. Check console for details.", { id: tid });
+        }
     };
 
     const handleAddLead = async (e: React.FormEvent) => {
@@ -256,10 +344,8 @@ export default function CSRDashboard() {
                 {/* Summary Metrics Grid */}
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} icon={<FiPlus />} color="blue" />
-                    <SummaryCard title="Follow-Up" value={metrics.followUp.toString()} icon={<FiClock />} color="purple" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} icon={<FiPhone />} color="orange" />
-                    <SummaryCard title="Rejected" value={metrics.rejected.toString()} icon={<FiSlash />} color="orange" />
-                    <SummaryCard title="Contacted" value={metrics.contacted.toString()} icon={<FiUserCheck />} color="blue" />
+                    <SummaryCard title="Not Interested" value={metrics.notinterested.toString()} icon={<FiSlash />} color="orange" />
                     <SummaryCard title="Paid Sales" value={metrics.paid.toString()} icon={<FiCheckCircle />} color="green" />
                     <SummaryCard title="Total Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
@@ -276,6 +362,7 @@ export default function CSRDashboard() {
                                     <th className="px-6 py-5">City/Source</th>
                                     <th className="px-6 py-5">Status</th>
                                     <th className="px-6 py-5">Remarks</th>
+                                    <th className="px-6 py-5">Next Call Date</th>
                                     <th className="px-6 py-5 text-center">Amount</th>
                                 </tr>
                             </thead>
@@ -294,8 +381,9 @@ export default function CSRDashboard() {
                                                 value={lead.status.toLowerCase()}
                                                 onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
                                                 className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 
-                                                    ${lead.status === 'paid' ? 'bg-green-100 text-green-700' :
-                                                        lead.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}
+        ${lead.status.toLowerCase() === 'paid' ? 'bg-green-100 text-green-700' :
+                                                        lead.status.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-700' :
+                                                            'bg-slate-100 text-slate-600'}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
                                             </select>
@@ -308,10 +396,23 @@ export default function CSRDashboard() {
                                                 placeholder="Add note..."
                                             />
                                         </td>
-                                        <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `$${lead.saleAmount}` : "-"}</td>
+
+                                        <td className="px-6 py-4">
+                                            {(lead.status.toLowerCase() === 'interested' || lead.status.toLowerCase() === 'follow-up') ? (
+                                                <input
+                                                    type="date"
+                                                    defaultValue={lead.followUpDate ? lead.followUpDate.split('T')[0] : ""}
+                                                    onChange={(e) => handleUpdate(lead._id, { followUpDate: e.target.value })}
+                                                    className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
+                                                />
+                                            ) : (
+                                                <span className="text-slate-400 text-xs">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `${lead.saleAmount}` : "-"}</td>
                                     </tr>
                                 )) : (
-                                    <tr><td colSpan={7} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
+                                    <tr><td colSpan={8} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
                                 )}
                             </tbody>
                         </table>
