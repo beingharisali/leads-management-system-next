@@ -34,6 +34,8 @@ interface Lead {
     remarks?: string;
     followUpDate?: string;
     createdAt: string;
+    statusUpdatedAt?: string;
+
     saleAmount?: number;
 }
 
@@ -162,31 +164,80 @@ export default function CSRDashboard() {
     // --- Core Filtering Logic ---
     const filteredLeads = useMemo(() => {
         const now = new Date();
-        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
 
         return leads.filter(l => {
             const leadDate = new Date(l.createdAt);
-            const matchesSearch = (l.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || (l.phone || "").includes(searchTerm);
-            const matchesStatus = statusFilter === "all" || l.status.toLowerCase() === statusFilter.toLowerCase();
+
+            const statusUpdatedDate = l.statusUpdatedAt
+                ? new Date(l.statusUpdatedAt)
+                : null;
+
+            const matchesSearch =
+                (l.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+                (l.phone || "").includes(searchTerm);
+
+            const matchesStatus =
+                statusFilter === "all" ||
+                l.status.toLowerCase() === statusFilter.toLowerCase();
 
             let matchesDate = true;
-            if (dateFilter === "today") matchesDate = leadDate >= startOfDay;
-            else if (dateFilter === "week") {
-                const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
-                matchesDate = leadDate >= weekAgo;
-            } else if (dateFilter === "month") {
-                const monthAgo = new Date(); monthAgo.setMonth(now.getMonth() - 1);
-                matchesDate = leadDate >= monthAgo;
-            } else if (dateFilter === "custom" && customDates.start && customDates.end) {
-                const start = new Date(customDates.start);
-                const end = new Date(customDates.end);
-                end.setHours(23, 59, 59);
-                matchesDate = leadDate >= start && leadDate <= end;
-            }
-            return matchesSearch && matchesStatus && matchesDate;
-        });
-    }, [leads, searchTerm, dateFilter, statusFilter, customDates]);
 
+            if (dateFilter === "today") {
+                const createdToday = leadDate >= startOfDay;
+
+                const resetToday =
+                    l.status.toLowerCase() === "new" &&
+                    !!statusUpdatedDate &&
+                    statusUpdatedDate >= startOfDay;
+
+                matchesDate = createdToday || resetToday;
+            }
+
+            else if (dateFilter === "week") {
+                const weekAgo = new Date();
+                weekAgo.setDate(now.getDate() - 7);
+
+                matchesDate = leadDate >= weekAgo;
+            }
+
+            else if (dateFilter === "month") {
+                const monthAgo = new Date();
+                monthAgo.setMonth(now.getMonth() - 1);
+
+                matchesDate = leadDate >= monthAgo;
+            }
+
+            else if (
+                dateFilter === "custom" &&
+                customDates.start &&
+                customDates.end
+            ) {
+                const start = new Date(customDates.start);
+
+                const end = new Date(customDates.end);
+                end.setHours(23, 59, 59, 999);
+
+                matchesDate =
+                    leadDate >= start &&
+                    leadDate <= end;
+            }
+
+            return (
+                matchesSearch &&
+                matchesStatus &&
+                matchesDate
+            );
+        });
+    }, [
+        leads,
+        searchTerm,
+        dateFilter,
+        statusFilter,
+        customDates
+    ]);
     // --- PAGINATION CALCULATION ---
     const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
     const paginatedLeads = useMemo(() => {
@@ -400,9 +451,17 @@ export default function CSRDashboard() {
                                         <td className="px-6 py-4">
                                             {(lead.status.toLowerCase() === 'interested' || lead.status.toLowerCase() === 'follow-up') ? (
                                                 <input
-                                                    type="date"
-                                                    defaultValue={lead.followUpDate ? lead.followUpDate.split('T')[0] : ""}
-                                                    onChange={(e) => handleUpdate(lead._id, { followUpDate: e.target.value })}
+                                                    type="datetime-local"
+                                                    defaultValue={
+                                                        lead.followUpDate
+                                                            ? new Date(lead.followUpDate).toISOString().slice(0, 16)
+                                                            : ""
+                                                    }
+                                                    onChange={(e) =>
+                                                        handleUpdate(lead._id, {
+                                                            followUpDate: e.target.value
+                                                        })
+                                                    }
                                                     className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
                                                 />
                                             ) : (
