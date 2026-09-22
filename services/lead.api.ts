@@ -1,16 +1,34 @@
 import http from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
+export type LeadStatus =
+  | "New"
+  | "Not Pick"
+  | "Not Interested"
+  | "Interested"
+  | "Paid"
+  | "Sale"
+  | "active"
+  | "inactive"
+  | "Follow-up"
+  | "Rejected"
+  | "Busy"
+  | "Wrong Number"
+  | "Contacted";
+
 export interface Lead {
   _id: string;
   name: string;
   phone: string;
   course: string;
-  status?: "new" | "contacted" | "interested" | "converted" | "rejected";
-  source?: string;
-  assignedTo?: { _id: string; name: string; email: string } | null;
-  createdAt?: string;
+  status: LeadStatus;
+  remarks?: string;
+  followUpDate?: string;
+  assignedTo?: { _id: string; name: string; email: string } | string | null;
+  createdAt: string;
   saleAmount?: number;
+  source?: string;
+  city?: string;
 }
 
 export interface LeadPayload {
@@ -18,16 +36,19 @@ export interface LeadPayload {
   phone: string;
   course: string;
   source?: string;
+  city?: string;
   assignedTo?: string;
   status?: string;
+  remarks?: string;
+  followUpDate?: string;
+  saleAmount?: number;
 }
-
-export interface UpdateLeadPayload extends Partial<LeadPayload> {}
 
 interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
+  leads?: T;
   count?: number;
 }
 
@@ -51,41 +72,57 @@ const EMPTY_PAGE: PaginatedLeadsResult = {
   totalPages: 1,
 };
 
+/* ===================== HELPER: NORMALIZE STATUS ===================== */
+const normalizeLeads = (leads: any[]): Lead[] => {
+  if (!Array.isArray(leads)) return [];
+  return leads.map((l) => {
+    const rawStatus = l.status?.toLowerCase() || "new";
+    let finalStatus: LeadStatus;
+
+    if (rawStatus === "active" || rawStatus === "inactive") {
+      finalStatus = rawStatus as LeadStatus;
+    } else {
+      finalStatus = (rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1)) as LeadStatus;
+    }
+
+    return { ...l, status: finalStatus };
+  });
+};
+
 /* ===================== CORE LEAD FUNCTIONS ===================== */
 
-// Kept for call sites that only need a bounded preview list (server now
-// paginates this under the hood, sorted newest-first).
-export const getLeadsByRole = async (
-  role: string,
-  csrId?: string,
-): Promise<Lead[]> => {
+export const getLeads = async (params: {
+  search?: string;
+  filter?: string;
+  start?: string;
+  end?: string
+}): Promise<Lead[]> => {
   try {
-    const url =
-      role === "csr"
-        ? csrId
-          ? `/lead/csr/${csrId}`
-          : `/lead/csr`
-        : "/lead/get-all-leads";
-    const res = await http.get<ApiResponse<Lead[]>>(url);
-    return res.data.data || [];
+    const res = await http.get<ApiResponse<any[]>>("/lead", { params });
+    if (res.data && res.data.success) {
+      return normalizeLeads(res.data.data);
+    }
+    return [];
   } catch (err: any) {
     console.error("Fetch Leads Error:", err.message);
     return [];
   }
 };
 
-// Paginated variant for lists/tables that need page controls + accurate totals.
+// Paginated variant for lists/tables that need page controls + accurate
+// totals (admin/leads and csr/leads/list pages). Routes match the current
+// backend layout: /lead/admin/all and /lead/by-date.
 export const getAllLeadsPaginated = async (
   page = 1,
   limit = 20,
 ): Promise<PaginatedLeadsResult> => {
   try {
-    const res = await http.get<PaginatedApiResponse<Lead[]>>(
-      "/lead/get-all-leads",
+    const res = await http.get<PaginatedApiResponse<any[]>>(
+      "/lead/admin/all",
       { params: { page, limit } },
     );
     return {
-      data: res.data.data || [],
+      data: normalizeLeads(res.data.data || []),
       totalCount: res.data.totalCount ?? 0,
       page: res.data.page ?? page,
       totalPages: res.data.totalPages ?? 1,
@@ -104,8 +141,8 @@ export const getLeadsByDateFiltered = async (
   opts?: { page?: number; limit?: number; csrId?: string },
 ): Promise<PaginatedLeadsResult> => {
   try {
-    const res = await http.get<PaginatedApiResponse<Lead[]>>(
-      "/lead/get-leads-by-date",
+    const res = await http.get<PaginatedApiResponse<any[]>>(
+      "/lead/by-date",
       {
         params: {
           filter,
@@ -116,7 +153,7 @@ export const getLeadsByDateFiltered = async (
       },
     );
     return {
-      data: res.data.data || [],
+      data: normalizeLeads(res.data.data || []),
       totalCount: res.data.totalCount ?? 0,
       page: res.data.page ?? opts?.page ?? 1,
       totalPages: res.data.totalPages ?? 1,
@@ -127,85 +164,102 @@ export const getLeadsByDateFiltered = async (
   }
 };
 
+/**
+ * UPDATED: Admin ke liye '/admin/all' use karega jo backend routes mein defined hai.
+ */
+export const getLeadsByRole = async (role: string, filter?: string, userId?: string): Promise<Lead[]> => {
+  try {
+    // Admin ke liye endpoint '/lead/admin/all' banta hai (backend route list ke mutabiq)
+    const url = role === "admin" ? "/lead/admin/all" : (role === "csr" && userId ? `/lead/csr/${userId}` : "/lead");
+
+    const res = await http.get<ApiResponse<any[]>>(url, {
+      params: { filter }
+    });
+
+    if (res.data && res.data.success) {
+      const rawLeads = res.data.data || res.data.leads || [];
+      return normalizeLeads(rawLeads);
+    }
+    return [];
+  } catch (err: any) {
+    console.error("Fetch Role Leads Error:", err.message);
+    return [];
+  }
+};
+
 export const createLead = async (data: LeadPayload): Promise<Lead> => {
   try {
-    const res = await http.post<ApiResponse<Lead>>("/lead/create-leads", data);
+    const payload = {
+      ...data,
+      status: data.status?.toLowerCase() || "new"
+    };
+    const res = await http.post<ApiResponse<Lead>>("/lead/create", payload);
     return res.data.data;
   } catch (err: any) {
-    throw new Error(err.message || "Failed to create lead");
+    throw new Error(err.response?.data?.message || "Failed to create lead");
   }
 };
 
-export const updateLead = async (
-  id: string,
-  data: UpdateLeadPayload,
-): Promise<Lead> => {
+export const updateLead = async (id: string, data: Partial<LeadPayload>): Promise<Lead> => {
   try {
-    const res = await http.patch<ApiResponse<Lead>>(
-      `/lead/update-leads/${id}`,
-      data,
-    );
+    const res = await http.patch<ApiResponse<Lead>>(`/lead/${id}`, data);
     return res.data.data;
   } catch (err: any) {
-    throw new Error(err.message || "Failed to update lead");
+    throw new Error(err.response?.data?.message || "Failed to update lead");
   }
 };
 
-export const deleteLead = async (
-  id: string,
-): Promise<{ success: boolean; message: string }> => {
+export const deleteLead = async (id: string): Promise<void> => {
   try {
-    const res = await http.delete<ApiResponse<null>>(
-      `/lead/delete-leads/${id}`,
-    );
-    return { success: res.data.success, message: res.data.message };
+    await http.delete(`/lead/${id}`);
   } catch (err: any) {
-    throw new Error(err.message || "Failed to delete lead");
+    throw new Error(err.response?.data?.message || "Failed to delete lead");
   }
 };
 
-export const convertLeadToSale = async (
-  id: string,
-  amount: number = 0,
-): Promise<Lead> => {
+/* ===================== SPECIAL ACTIONS ===================== */
+
+/**
+ * FIXED: Route updated to match backend: router.delete("/admin/delete-all")
+ */
+export const deleteAllLeads = async (): Promise<void> => {
   try {
-    const res = await http.post<ApiResponse<Lead>>(
-      `/lead/convert-to-sale/${id}`,
-      { amount },
-    );
+    await http.delete("/lead/admin/delete-all");
+  } catch (err: any) {
+    throw new Error(err.response?.data?.message || "Failed to delete all leads");
+  }
+};
+
+export const convertLeadToSale = async (id: string, saleAmount: number): Promise<Lead> => {
+  try {
+    const res = await http.post<ApiResponse<Lead>>(`/lead/convert-to-sale/${id}`, { amount: saleAmount });
     return res.data.data;
   } catch (err: any) {
-    throw new Error(err.message || "Failed to convert lead to sale");
+    throw new Error(err.response?.data?.message || "Conversion failed");
   }
 };
 
-/* ===================== EXCEL OPERATIONS ===================== */
-
-export const bulkInsertLeads = async (
-  file: File,
-  csrId: string,
-): Promise<any> => {
-  if (!file) throw new Error("Please select an Excel file.");
-
-  // Safety Check: Backend ko ID chahiye, name nahi.
-  if (!csrId || csrId.includes(" ")) {
-    throw new Error(
-      "Invalid Selection: System is capturing Name instead of ID. Please refresh and try again.",
-    );
-  }
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("csrId", csrId);
-
+/**
+ * Bulk Insert Function (As per your requirement)
+ */
+export const bulkInsertLeads = async (file: File, userId: string): Promise<any> => {
   try {
-    // Axios automatically sets multipart/form-data when sending FormData
-    const res = await http.post("/lead/bulk-insert-excel", formData);
+    if (!userId) throw new Error("User ID is required for bulk upload");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("csrId", userId);
+    formData.append("assignedTo", userId);
+
+    const res = await http.post("/lead/bulk/upload-excel", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      },
+    });
+
     return res.data;
   } catch (err: any) {
-    const errMsg =
-      err.response?.data?.message || err.message || "Upload failed";
-    console.error("Bulk Insert Error Detail:", errMsg);
-    throw new Error(errMsg);
+    console.error("API Bulk Upload Error Detail:", err.response?.data);
+    throw new Error(err.response?.data?.message || "Excel upload failed on server");
   }
 };

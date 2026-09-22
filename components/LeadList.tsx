@@ -14,6 +14,11 @@ interface LeadListProps {
   role: "csr" | "admin"; // determines which actions are shown
 }
 
+// Matches the status vocabulary used across the rest of the app (CsrLeadPanel):
+// "paid"/"sale" are the current terms, "converted" is kept for legacy records.
+const isSold = (status?: string) =>
+  ["paid", "sale", "sold", "converted"].includes((status || "").toLowerCase());
+
 export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
@@ -22,7 +27,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
     if (!confirm("Are you sure you want to delete this lead?")) return;
 
     try {
-      await http.delete(`/lead/delete-leads/${id}`);
+      await http.delete(`/lead/${id}`);
       refreshLeads();
     } catch (err: any) {
       console.error("Delete lead error:", err);
@@ -60,7 +65,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
               <td className="p-3 border">
                 <span
                   className={`px-2 py-1 rounded text-sm font-medium ${
-                    lead.status === "converted"
+                    isSold(lead.status)
                       ? "bg-green-100 text-green-700"
                       : "bg-blue-100 text-blue-700"
                   }`}
@@ -93,7 +98,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                 )}
 
                 {/* Convert to sale button */}
-                {lead.status !== "converted" && (
+                {!isSold(lead.status) && (
                   <button
                     onClick={() => setSelectedLead(lead)}
                     className="text-blue-600 hover:underline font-medium"
@@ -103,7 +108,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
                 )}
 
                 {/* CSR view for converted leads */}
-                {lead.status === "converted" && role !== "admin" && (
+                {isSold(lead.status) && role !== "admin" && (
                   <span className="text-green-600 font-semibold">
                     Converted
                   </span>

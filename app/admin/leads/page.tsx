@@ -14,7 +14,8 @@ const columns: Column[] = [
     {
         key: "assignedTo",
         label: "Assigned To",
-        render: (row: Lead) => row.assignedTo?.name || "Unassigned",
+        render: (row: Lead) =>
+            (typeof row.assignedTo === "object" ? row.assignedTo?.name : row.assignedTo) || "Unassigned",
     },
     { key: "status", label: "Status", align: "center" },
 ];
