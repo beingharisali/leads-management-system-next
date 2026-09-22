@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Toaster, toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -42,6 +43,8 @@ interface CSRFormData {
 }
 
 export default function AdminDashboardPage() {
+    const router = useRouter();
+
     // --- Core States ---
     const [data, setData] = useState<DashboardData | null>(null);
     const [leads, setLeads] = useState<Lead[]>([]);
@@ -113,6 +116,12 @@ export default function AdminDashboardPage() {
 
     const toggleModal = (modalName: keyof typeof modals, state: boolean) => {
         setModals(prev => ({ ...prev, [modalName]: state }));
+    };
+
+    // Lands the admin directly on that agent's own live dashboard - no
+    // separate CSR login needed.
+    const handleOpenAgentDashboard = (csrId: string, name: string) => {
+        router.push(`/admin/agent/${csrId}?name=${encodeURIComponent(name)}`);
     };
 
     const handleToggleCSRStatus = async (id: string, currentStatus: string) => {
@@ -374,6 +383,7 @@ export default function AdminDashboardPage() {
                         selectedCSR={selectedCSR}
                         onSelect={setSelectedCSR}
                         onToggleStatus={handleToggleCSRStatus}
+                        onOpenDashboard={handleOpenAgentDashboard}
                     />
                 </aside>
 

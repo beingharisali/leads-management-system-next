@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { FiUsers, FiActivity, FiInfo, FiPower } from "react-icons/fi";
+import { FiUsers, FiActivity, FiInfo, FiPower, FiExternalLink } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 
 /* ================= TYPES ================= */
@@ -21,11 +21,14 @@ interface Props {
     selectedCSR: string | null;
     onSelect: (csrId: string | null) => void;
     onToggleStatus: (csrId: string, currentStatus: string) => void;
+    // Navigates straight to that agent's own dashboard (no separate login
+    // needed) - fired when an agent card is clicked.
+    onOpenDashboard: (csrId: string, name: string) => void;
 }
 
 /* ================= MAIN COMPONENT ================= */
 
-export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleStatus }: Props) {
+export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleStatus, onOpenDashboard }: Props) {
     return (
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-6 flex flex-col h-[calc(100vh-140px)] w-full sticky top-8">
 
@@ -88,7 +91,8 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
-                                    onClick={() => onSelect(actualId)}
+                                    onClick={() => onOpenDashboard(actualId, csr.name)}
+                                    title={`Open ${csr.name}'s dashboard`}
                                     className={`group relative p-5 rounded-[2rem] transition-all duration-300 cursor-pointer border-2 ${isSelected
                                         ? "border-indigo-600 bg-white shadow-xl shadow-indigo-100/50"
                                         : "border-slate-50 bg-white hover:border-slate-200"
@@ -96,9 +100,10 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                                 >
                                     <div className="flex justify-between items-start mb-4">
                                         <div className="flex-1 min-w-0">
-                                            <p className={`font-black text-lg tracking-tight truncate pr-2 ${isSelected ? "text-indigo-600" : "text-slate-800"
+                                            <p className={`font-black text-lg tracking-tight truncate pr-2 flex items-center gap-1.5 ${isSelected ? "text-indigo-600" : "text-slate-800"
                                                 }`}>
                                                 {csr.name}
+                                                <FiExternalLink className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" size={13} />
                                             </p>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className={`h-2 w-2 rounded-full transition-all duration-500 ${isActive

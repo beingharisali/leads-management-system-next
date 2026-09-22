@@ -3,6 +3,7 @@
 import { useState, lazy, Suspense } from "react";
 import http from "@/services/http";
 import type { Lead } from "@/services/lead.api";
+import ColumnFilterDropdown, { FilterOption } from "@/components/filters/ColumnFilterDropdown";
 
 // Lazy-load modal for production optimization
 const ConvertLeadModal = lazy(() => import("./ConvertLeadModel"));
@@ -12,6 +13,21 @@ interface LeadListProps {
   leads: Lead[];
   refreshLeads: () => void;
   role: "csr" | "admin"; // determines which actions are shown
+
+  // Column header filters (all optional - headers render as plain text
+  // when a filter's options/handler aren't supplied).
+  monthOptions?: FilterOption[];
+  cityOptions?: FilterOption[];
+  sourceOptions?: FilterOption[];
+  statusOptions?: string[];
+  selectedMonths?: string[];
+  selectedCities?: string[];
+  selectedSources?: string[];
+  selectedStatuses?: string[];
+  onMonthsChange?: (v: string[]) => void;
+  onCitiesChange?: (v: string[]) => void;
+  onSourcesChange?: (v: string[]) => void;
+  onStatusesChange?: (v: string[]) => void;
 }
 
 // Matches the status vocabulary used across the rest of the app (CsrLeadPanel):
@@ -19,7 +35,12 @@ interface LeadListProps {
 const isSold = (status?: string) =>
   ["paid", "sale", "sold", "converted"].includes((status || "").toLowerCase());
 
-export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
+export default function LeadList({
+  leads, refreshLeads, role,
+  monthOptions, cityOptions, sourceOptions, statusOptions,
+  selectedMonths, selectedCities, selectedSources, selectedStatuses,
+  onMonthsChange, onCitiesChange, onSourcesChange, onStatusesChange,
+}: LeadListProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   // Delete lead (admin only)
@@ -47,9 +68,30 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
             <th className="p-3 border text-left">Name</th>
             <th className="p-3 border text-left">Phone</th>
             <th className="p-3 border text-left">Course</th>
-            <th className="p-3 border text-left">Source</th>
-            <th className="p-3 border text-center">Status</th>
-            <th className="p-3 border text-center">Created</th>
+            <th className="p-3 border text-left">
+              City
+              {cityOptions && onCitiesChange && (
+                <ColumnFilterDropdown label="City" options={cityOptions} selected={selectedCities || []} onChange={onCitiesChange} />
+              )}
+            </th>
+            <th className="p-3 border text-left">
+              Source
+              {sourceOptions && onSourcesChange && (
+                <ColumnFilterDropdown label="Source" options={sourceOptions} selected={selectedSources || []} onChange={onSourcesChange} />
+              )}
+            </th>
+            <th className="p-3 border text-center">
+              Status
+              {statusOptions && onStatusesChange && (
+                <ColumnFilterDropdown label="Status" options={statusOptions.map(s => ({ value: s, label: s.toUpperCase() }))} selected={selectedStatuses || []} onChange={onStatusesChange} />
+              )}
+            </th>
+            <th className="p-3 border text-center">
+              Created
+              {monthOptions && onMonthsChange && (
+                <ColumnFilterDropdown label="Month" options={monthOptions} selected={selectedMonths || []} onChange={onMonthsChange} />
+              )}
+            </th>
             <th className="p-3 border text-center">Action</th>
           </tr>
         </thead>
@@ -60,6 +102,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
               <td className="p-3 border text-left">{lead.name}</td>
               <td className="p-3 border text-left">{lead.phone}</td>
               <td className="p-3 border text-left">{lead.course}</td>
+              <td className="p-3 border text-left">{lead.city || "-"}</td>
               <td className="p-3 border text-left">{lead.source || "-"}</td>
 
               <td className="p-3 border">

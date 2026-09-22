@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
     getLeadsByRole,
@@ -12,15 +12,14 @@ import {
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
 import Loading from "@/components/Loading";
-import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
 import {
-    FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
-    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck,
-    FiChevronLeft, FiChevronRight // New Icons for Pagination
+    FiArrowLeft, FiCheckCircle, FiPhone, FiSearch,
+    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiEye,
+    FiChevronLeft, FiChevronRight
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -37,7 +36,6 @@ interface Lead {
     followUpDate?: string;
     createdAt: string;
     statusUpdatedAt?: string;
-
     saleAmount?: number;
 }
 
@@ -46,14 +44,21 @@ interface Lead {
 // showing up in the today/week/month due-date views.
 const CLOSED_STATUSES = ["paid", "sale", "not interested", "converted"];
 
-export default function CSRDashboard() {
+// Admin-only view of a single agent's dashboard: same live pipeline the
+// CSR sees on /csr/dashboard, but reachable straight from the admin
+// console (click an agent -> land here) with no separate CSR login.
+export default function AdminAgentDashboard() {
     const router = useRouter();
+    const params = useParams<{ id: string }>();
+    const searchParams = useSearchParams();
+    const csrId = params.id;
+    const agentName = searchParams.get("name") || "Agent";
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [leads, setLeads] = useState<Lead[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const notifiedLeadsRef = useRef<Record<string, boolean>>({});
 
     // --- Pagination States ---
     const [currentPage, setCurrentPage] = useState(1);
@@ -77,43 +82,14 @@ export default function CSRDashboard() {
     const statusOptions = ["new", "not pick", "interested", "paid", "not interested", "busy", "wrong number",];
 
     const fetchData = useCallback(async (isSilent = false) => {
+        if (!csrId) return;
         try {
             if (!isSilent) setLoading(true);
-            const role = await getUserRole();
-            const userId = await getUserId();
-            if (!role || !userId) { logout(); return router.push("/login"); }
-
-            const leadsRes = await getLeadsByRole(role, undefined, userId);
+            const leadsRes = await getLeadsByRole("csr", undefined, csrId);
             setLeads(Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : []);
-        } catch (err) { toast.error("Failed to load dashboard data"); }
+        } catch (err) { toast.error("Failed to load agent's dashboard data"); }
         finally { setLoading(false); }
-    }, [router]);
-
-    useEffect(() => {
-        if (leads.length === 0) return;
-
-        const todayStr = new Date().toISOString().split('T')[0];
-
-        leads.forEach(lead => {
-
-            if (lead.followUpDate && lead.followUpDate.split('T')[0] === todayStr && !notifiedLeadsRef.current[lead._id]) {
-
-                toast(`Reminder: Call ${lead.name} right now!`, {
-                    icon: '📞',
-                    duration: 6000,
-                    position: "top-center",
-                    style: {
-                        background: '#1E293B',
-                        color: '#fff',
-                        fontWeight: 'bold'
-                    }
-                });
-
-
-                notifiedLeadsRef.current[lead._id] = true;
-            }
-        });
-    }, [leads]);
+    }, [csrId]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -128,7 +104,7 @@ export default function CSRDashboard() {
     const cityOptions = useMemo(() => textOptionsFrom(leads.map(l => l.city)), [leads]);
     const sourceOptions = useMemo(() => textOptionsFrom(leads.map(l => l.source)), [leads]);
 
-    // --- Excel Import Logic ---
+    // --- Excel Import Logic (assigns straight to this agent) ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -139,10 +115,8 @@ export default function CSRDashboard() {
         }
         const tid = toast.loading("Uploading leads to server...");
         try {
-            const userId = await getUserId();
-            if (!userId) throw new Error("User session not found");
-            await bulkInsertLeads(file, userId);
-            toast.success("Leads imported and assigned to you!", { id: tid });
+            await bulkInsertLeads(file, csrId);
+            toast.success(`Leads imported and assigned to ${agentName}!`, { id: tid });
             fetchData(true);
             if (fileInputRef.current) fileInputRef.current.value = "";
         } catch (err: any) {
@@ -151,13 +125,9 @@ export default function CSRDashboard() {
     };
 
     // --- Core Filtering Logic ---
-    // Date filters key off `followUpDate` (when the lead is next due for
-    // contact), not `createdAt`. The server keeps that date up to date:
-    // Paid/Not Interested clears it (lead closes out, drops out of every
-    // day/week/month view below), any other status change rolls it to
-    // tomorrow, and a CSR-picked date is respected as-is. "today" and
-    // every other window include anything overdue so a lead never
-    // silently disappears if a CSR misses a day.
+    // Same due-date semantics as the CSR's own dashboard: filters key off
+    // `followUpDate`, Paid/Not Interested close a lead out of these views,
+    // and every window includes anything overdue.
     const filteredLeads = useMemo(() => {
         const now = new Date();
 
@@ -247,6 +217,7 @@ export default function CSRDashboard() {
         selectedSources,
         selectedStatuses
     ]);
+
     // --- PAGINATION CALCULATION ---
     const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
     const paginatedLeads = useMemo(() => {
@@ -267,7 +238,6 @@ export default function CSRDashboard() {
             notPick: getCount("not pick"),
             followUp: getCount("follow-up"),
             notinterested: getCount("not interested"),
-
         };
     }, [filteredLeads]);
 
@@ -277,14 +247,12 @@ export default function CSRDashboard() {
             const normalizedStatus = data.status?.toLowerCase().trim();
             let updatedLeadData;
 
-
             if (normalizedStatus && normalizedStatus !== "paid" && normalizedStatus !== "sale") {
                 data.saleAmount = null as any;
             }
 
             // Don't send followUpDate here on a plain status change - the
-            // server auto-schedules it (closes out on Paid/Not Interested,
-            // rolls to tomorrow otherwise). Only the dedicated date picker
+            // server auto-schedules it. Only the dedicated date picker
             // (below) sends an explicit followUpDate to pin a specific day.
 
             if (normalizedStatus === "paid" || normalizedStatus === "sale") {
@@ -297,7 +265,6 @@ export default function CSRDashboard() {
             } else {
                 updatedLeadData = await updateLead(id, data);
             }
-
 
             setLeads(prev => prev.map(l =>
                 l._id === id
@@ -323,9 +290,8 @@ export default function CSRDashboard() {
         e.preventDefault();
         const tid = toast.loading("Adding...");
         try {
-            const userId = await getUserId();
-            await createLead({ ...newLead, assignedTo: userId } as any);
-            toast.success("Added!", { id: tid });
+            await createLead({ ...newLead, assignedTo: csrId } as any);
+            toast.success(`Added to ${agentName}!`, { id: tid });
             setIsModalOpen(false);
             setNewLead({ name: "", phone: "", city: "", source: "", course: "", remarks: "" });
             fetchData(true);
@@ -335,7 +301,7 @@ export default function CSRDashboard() {
     if (loading) return <Loading />;
 
     return (
-        <ProtectedRoute role="csr">
+        <ProtectedRoute role="admin">
             <Toaster position="top-right" />
             <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
 
@@ -343,7 +309,18 @@ export default function CSRDashboard() {
                 <div className="max-w-[1600px] mx-auto mb-8">
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                         <div>
-                            <h1 className="text-3xl font-black text-slate-900">CSR Dashboard</h1>
+                            <button
+                                onClick={() => router.push("/admin/dashboard")}
+                                className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-indigo-600 transition-colors mb-2"
+                            >
+                                <FiArrowLeft /> Back to Admin Dashboard
+                            </button>
+                            <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
+                                {agentName}&apos;s Dashboard
+                                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full">
+                                    <FiEye size={12} /> Admin View
+                                </span>
+                            </h1>
                             <p className="text-slate-500 text-sm font-medium">
                                 Showing {paginatedLeads.length} of {filteredLeads.length} leads
                             </p>
@@ -369,7 +346,6 @@ export default function CSRDashboard() {
                                 />
                             </div>
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
-                            <button onClick={logout} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm border border-slate-100"><FiLogOut size={20} /></button>
                         </div>
                     </div>
 
@@ -440,7 +416,7 @@ export default function CSRDashboard() {
                                             <select
                                                 value={lead.status.toLowerCase()}
                                                 onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
-                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 
+                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200
         ${lead.status.toLowerCase() === 'paid' ? 'bg-green-100 text-green-700' :
                                                         lead.status.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-700' :
                                                             'bg-slate-100 text-slate-600'}`}
@@ -506,7 +482,6 @@ export default function CSRDashboard() {
                                 <div className="flex items-center gap-1">
                                     {[...Array(totalPages)].map((_, i) => {
                                         const pageNum = i + 1;
-                                        // Display logic: show first, last, and pages around current
                                         if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
                                             return (
                                                 <button
@@ -536,7 +511,7 @@ export default function CSRDashboard() {
                     )}
                 </div>
 
-                {/* Create Modal (Remains same as your original) */}
+                {/* Create Lead Modal */}
                 <AnimatePresence>
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -544,7 +519,7 @@ export default function CSRDashboard() {
                                 <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
                                     <div>
                                         <h2 className="text-xl font-bold">Create New Lead</h2>
-                                        <p className="text-slate-400 text-xs">Fill in the lead details manually</p>
+                                        <p className="text-slate-400 text-xs">Will be assigned to {agentName}</p>
                                     </div>
                                     <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><FiX size={20} /></button>
                                 </div>
