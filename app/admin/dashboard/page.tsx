@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
@@ -9,7 +9,7 @@ import { FiPlus, FiUploadCloud, FiLogOut, FiTrendingUp, FiRefreshCw } from "reac
 // APIs
 import { getAdminStats } from "@/services/dashboard.api";
 import { createCSR } from "@/services/auth.api";
-import { getLeadsByRole, bulkInsertLeads } from "@/services/lead.api";
+import { getLeadsByDateFiltered, bulkInsertLeads } from "@/services/lead.api";
 
 // Components
 import CSRSidebar from "@/components/CsrSidebar";
@@ -18,10 +18,18 @@ import DashboardGraphs from "@/components/DashboardGraphs";
 import SummaryCard from "@/components/SummaryCard";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
+import Pagination from "@/components/buttons/Pagination";
+
+const LEADS_PAGE_SIZE = 20;
 
 export default function AdminDashboardPage() {
     const [data, setData] = useState<any>(null);
-    const [leads, setLeads] = useState<any[]>([]);
+    // Leads for the "Lead Management Control" table only — fetched pre-filtered
+    // (by period + selected CSR) and paginated by the server, instead of pulling
+    // every lead in the system on every load/filter change.
+    const [tableLeads, setTableLeads] = useState<any[]>([]);
+    const [tablePage, setTablePage] = useState(1);
+    const [tableTotalPages, setTableTotalPages] = useState(1);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
@@ -38,45 +46,6 @@ export default function AdminDashboardPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [assignToCSR, setAssignToCSR] = useState<string>("");
 
-    /* ================= DYNAMIC REVENUE & SALES CALCULATION ================= */
-    // Ye hissa sabse important hai revenue show karne ke liye
-    const { totalRevenue, totalSalesCount } = useMemo(() => {
-        if (!leads.length) return { totalRevenue: 0, totalSalesCount: 0 };
-
-        // 1. Leads filter karein (Dono status check karein: 'sale' aur 'converted')
-        const salesLeads = leads.filter(l =>
-            l.status?.toLowerCase() === "sale" ||
-            l.status?.toLowerCase() === "converted"
-        );
-
-        // 2. Amount calculate karein (Check all possible field names)
-        const total = salesLeads.reduce((sum, lead) => {
-            const val = lead.saleAmount || lead.amount || 0;
-            return sum + (Number(val) || 0);
-        }, 0);
-
-        return {
-            totalRevenue: total,
-            totalSalesCount: salesLeads.length
-        };
-    }, [leads]);
-
-    /* ================= TIME FILTERING LOGIC ================= */
-    const filteredLeadsByTime = useMemo(() => {
-        if (!leads.length) return [];
-        const now = new Date();
-        return leads.filter((lead) => {
-            const leadDate = new Date(lead.createdAt || Date.now());
-            const diffInTime = now.getTime() - leadDate.getTime();
-            const diffInDays = diffInTime / (1000 * 3600 * 24);
-
-            if (filter === "day") return diffInDays <= 1;
-            if (filter === "week") return diffInDays <= 7;
-            if (filter === "month") return diffInDays <= 30;
-            return true;
-        });
-    }, [leads, filter]);
-
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('en-PK', {
             style: 'currency',
@@ -92,11 +61,16 @@ export default function AdminDashboardPage() {
         try {
             const [statsRes, leadsRes] = await Promise.all([
                 getAdminStats(filter),
-                getLeadsByRole("admin"),
+                getLeadsByDateFiltered(filter, {
+                    page: tablePage,
+                    limit: LEADS_PAGE_SIZE,
+                    csrId: selectedCSR || undefined,
+                }),
             ]);
 
             setData(statsRes);
-            setLeads(leadsRes || []);
+            setTableLeads(leadsRes.data);
+            setTableTotalPages(leadsRes.totalPages);
             setError("");
         } catch (err: any) {
             setError(err.message || "Failed to load dashboard data");
@@ -104,7 +78,7 @@ export default function AdminDashboardPage() {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [filter]);
+    }, [filter, selectedCSR, tablePage]);
 
     useEffect(() => {
         fetchDashboardData();
@@ -112,6 +86,18 @@ export default function AdminDashboardPage() {
 
     const handleDataRefresh = async () => {
         await fetchDashboardData(true);
+    };
+
+    // Changing the period or the selected CSR invalidates the current page,
+    // so both are reset together (single re-fetch instead of two).
+    const handleFilterChange = (f: "day" | "week" | "month") => {
+        setFilter(f);
+        setTablePage(1);
+    };
+
+    const handleSelectCSR = (csrId: string | null) => {
+        setSelectedCSR(csrId);
+        setTablePage(1);
     };
 
     const handleLogout = () => {
@@ -222,20 +208,20 @@ export default function AdminDashboardPage() {
             <div className="space-y-8">
                 <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200/60 w-fit">
                     {["day", "week", "month"].map((f) => (
-                        <button key={f} onClick={() => setFilter(f as any)} className={`px-8 py-2.5 rounded-xl text-xs font-black capitalize transition-all ${filter === f ? "bg-indigo-600 text-white shadow-md" : "text-slate-400"}`}> {f} </button>
+                        <button key={f} onClick={() => handleFilterChange(f as any)} className={`px-8 py-2.5 rounded-xl text-xs font-black capitalize transition-all ${filter === f ? "bg-indigo-600 text-white shadow-md" : "text-slate-400"}`}> {f} </button>
                     ))}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
-                    <SummaryCard title="Total Leads" value={leads.length.toString()} trend="Live" color="purple" />
-                    <SummaryCard title="Closed Sales" value={totalSalesCount.toString()} trend="+Active" color="green" />
+                    <SummaryCard title="Total Leads" value={(data?.totalLeads ?? 0).toString()} trend="Live" color="purple" />
+                    <SummaryCard title="Closed Sales" value={(data?.totalSales ?? 0).toString()} trend="+Active" color="green" />
 
-                    {/* REVENUE CARD (Now uses calculated totalRevenue) */}
+                    {/* REVENUE CARD (backend-computed lifetime revenue) */}
                     <SummaryCard
                         title="Revenue"
-                        value={formatCurrency(totalRevenue)}
+                        value={formatCurrency(data?.totalRevenue ?? 0)}
                         color="blue"
-                        trend={totalRevenue > 0 ? "Profit" : "Awaiting Sales"}
+                        trend={(data?.totalRevenue ?? 0) > 0 ? "Profit" : "Awaiting Sales"}
                     />
 
                     <SummaryCard title="Conv. Rate" value={`${data?.conversionRate || 0}%`} color="orange" trend="Calculated" />
@@ -244,7 +230,7 @@ export default function AdminDashboardPage() {
 
             <main className="grid grid-cols-12 gap-8">
                 <aside className="col-span-12 lg:col-span-3 lg:sticky lg:top-8">
-                    <CSRSidebar csrs={data?.csrPerformance || []} selectedCSR={selectedCSR} onSelect={setSelectedCSR} />
+                    <CSRSidebar csrs={data?.csrPerformance || []} selectedCSR={selectedCSR} onSelect={handleSelectCSR} />
                 </aside>
 
                 <section className="col-span-12 lg:col-span-9 space-y-12">
@@ -261,11 +247,14 @@ export default function AdminDashboardPage() {
                         <div className="p-8 border-b bg-slate-50/30 font-black text-lg text-slate-800">Lead Management Control</div>
                         <div className="p-2">
                             <CSRLeadsPanel
-                                leads={filteredLeadsByTime}
+                                leads={tableLeads}
                                 selectedCSR={selectedCSR}
                                 onConvertToSale={handleDataRefresh}
                                 onDeleteLead={handleDataRefresh}
                             />
+                            <div className="px-6 pb-4">
+                                <Pagination currentPage={tablePage} totalPages={tableTotalPages} onPageChange={setTablePage} />
+                            </div>
                         </div>
                     </motion.div>
                 </section>

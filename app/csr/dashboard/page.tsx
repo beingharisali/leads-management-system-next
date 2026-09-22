@@ -1,23 +1,25 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import * as XLSX from "xlsx";
 import {
-    getLeadsByRole,
+    getLeadsByDateFiltered,
     deleteLead,
     convertLeadToSale,
     createLead,
     updateLead,
     bulkInsertLeads,
+    Lead,
 } from "@/services/lead.api";
 import { getCSRStats } from "@/services/dashboard.api";
 import SummaryCard from "@/components/SummaryCard";
 import CSRStatsChart from "@/components/CSRStatsChart";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
-import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
+import Pagination from "@/components/buttons/Pagination";
+import { getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,26 +28,22 @@ import {
 } from "react-icons/fi";
 
 type Filter = "day" | "week" | "month";
-
-interface Lead {
-    _id: string;
-    name: string;
-    course: string;
-    phone: string;
-    status?: "new" | "contacted" | "converted";
-    saleAmount?: number;
-    createdAt?: string;
-}
+const LEADS_PAGE_SIZE = 20;
 
 export default function CSRDashboard() {
     const router = useRouter();
+    // Current page of leads for the selected period — fetched pre-filtered
+    // and paginated by the server instead of pulling the CSR's whole history.
     const [leads, setLeads] = useState<Lead[]>([]);
+    const [leadsPage, setLeadsPage] = useState(1);
+    const [leadsTotalPages, setLeadsTotalPages] = useState(1);
     const [stats, setStats] = useState({
         totalLeads: 0,
         totalSales: 0,
         conversionRate: "0%",
         leadsStats: { day: 0, week: 0, month: 0 },
         salesStats: { day: 0, week: 0, month: 0 },
+        revenueStats: { day: 0, week: 0, month: 0 },
     });
 
     const [filter, setFilter] = useState<Filter>("day");
@@ -64,25 +62,26 @@ export default function CSRDashboard() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     // ================= DATA FETCHING =================
-    const fetchData = async (silent = false) => {
+    // Fetches the stats summary and one page of leads (both already scoped
+    // to the selected period by the server) in parallel.
+    const fetchData = useCallback(async (silent = false) => {
         try {
             if (!silent) setLoading(true);
-            const role = await getUserRole();
-            const userId = await getUserId();
-            if (!role || !userId) throw new Error("Authentication failed");
 
             const [leadsRes, statsRes] = await Promise.all([
-                getLeadsByRole(role, userId),
+                getLeadsByDateFiltered(filter, { page: leadsPage, limit: LEADS_PAGE_SIZE }),
                 getCSRStats(filter),
             ]);
 
-            setLeads((leadsRes as Lead[]) || []);
+            setLeads(leadsRes.data);
+            setLeadsTotalPages(leadsRes.totalPages);
             setStats({
                 totalLeads: statsRes?.totalLeads ?? 0,
                 totalSales: statsRes?.totalSales ?? 0,
                 conversionRate: statsRes?.conversionRate ?? "0%",
                 leadsStats: statsRes?.leadsStats ?? { day: 0, week: 0, month: 0 },
                 salesStats: statsRes?.salesStats ?? { day: 0, week: 0, month: 0 },
+                revenueStats: statsRes?.revenueStats ?? { day: 0, week: 0, month: 0 },
             });
         } catch (err: any) {
             setError(err.message || "Failed to load dashboard");
@@ -90,33 +89,29 @@ export default function CSRDashboard() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [filter, leadsPage]);
 
     useEffect(() => {
         fetchData();
-    }, [filter]);
+    }, [fetchData]);
+
+    // Changing the period invalidates the current page
+    const handleFilterChange = (f: Filter) => {
+        setFilter(f);
+        setLeadsPage(1);
+    };
 
     // ================= DYNAMIC CALCULATIONS =================
-    const filteredLeads = useMemo(() => {
-        if (!leads.length) return [];
-        const now = new Date();
-        return leads.filter((lead) => {
-            const leadDate = new Date(lead.createdAt || Date.now());
-            const diffInDays = (now.getTime() - leadDate.getTime()) / (1000 * 3600 * 24);
-            if (filter === "day") return diffInDays <= 1;
-            if (filter === "week") return diffInDays <= 7;
-            if (filter === "month") return diffInDays <= 30;
-            return true;
-        });
-    }, [leads, filter]);
-
-    const myMetrics = useMemo(() => {
-        const salesOnly = filteredLeads.filter(l => l.status === "converted");
-        const totalRevenue = salesOnly.reduce((sum, lead) => sum + (lead.saleAmount || 0), 0);
-        const count = filteredLeads.length;
-        const rate = count > 0 ? ((salesOnly.length / count) * 100).toFixed(1) + "%" : "0%";
-        return { totalRevenue, salesCount: salesOnly.length, rate };
-    }, [filteredLeads]);
+    // Period totals now come straight from the server instead of being
+    // recomputed client-side over a fully-fetched lead list.
+    const myMetrics = {
+        totalRevenue: stats.revenueStats[filter] ?? 0,
+        salesCount: stats.salesStats[filter] ?? 0,
+        rate:
+            (stats.leadsStats[filter] ?? 0) > 0
+                ? (((stats.salesStats[filter] ?? 0) / stats.leadsStats[filter]) * 100).toFixed(1) + "%"
+                : "0%",
+    };
 
     // ================= ACTIONS =================
     const handleConvertToSale = async (id: string) => {
@@ -222,7 +217,7 @@ export default function CSRDashboard() {
 
                 {/* Summary Cards */}
                 <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                    <SummaryCard title="Active Leads" value={filteredLeads.length} />
+                    <SummaryCard title="Active Leads" value={stats.leadsStats[filter]} />
                     <SummaryCard title="My Revenue" value={`$${myMetrics.totalRevenue.toLocaleString()}`} />
                     <SummaryCard title="Conversion Rate" value={myMetrics.rate} />
                 </div>
@@ -231,7 +226,7 @@ export default function CSRDashboard() {
                 <div className="max-w-7xl mx-auto bg-white p-5 rounded-[2rem] shadow-sm border flex flex-wrap justify-between items-center gap-4 mb-10">
                     <div className="flex bg-slate-100 p-1.5 rounded-2xl">
                         {["day", "week", "month"].map((f) => (
-                            <button key={f} onClick={() => setFilter(f as Filter)} className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${filter === f ? "bg-white text-blue-600 shadow-md scale-105" : "text-slate-500 hover:text-slate-700"}`}>
+                            <button key={f} onClick={() => handleFilterChange(f as Filter)} className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${filter === f ? "bg-white text-blue-600 shadow-md scale-105" : "text-slate-500 hover:text-slate-700"}`}>
                                 {f.toUpperCase()}
                             </button>
                         ))}
@@ -262,7 +257,7 @@ export default function CSRDashboard() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                                {filteredLeads.length > 0 ? filteredLeads.map((lead) => (
+                                {leads.length > 0 ? leads.map((lead) => (
                                     <tr key={lead._id} className="group hover:bg-slate-50/50 transition-colors">
                                         <td className="px-8 py-5">
                                             <div className="font-bold text-slate-700">{lead.name}</div>
@@ -310,6 +305,9 @@ export default function CSRDashboard() {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                    <div className="px-8 pb-6">
+                        <Pagination currentPage={leadsPage} totalPages={leadsTotalPages} onPageChange={setLeadsPage} />
                     </div>
                 </div>
 

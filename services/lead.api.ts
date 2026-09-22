@@ -31,8 +31,30 @@ interface ApiResponse<T> {
   count?: number;
 }
 
+interface PaginatedApiResponse<T> extends ApiResponse<T> {
+  totalCount: number;
+  page: number;
+  totalPages: number;
+}
+
+export interface PaginatedLeadsResult {
+  data: Lead[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+}
+
+const EMPTY_PAGE: PaginatedLeadsResult = {
+  data: [],
+  totalCount: 0,
+  page: 1,
+  totalPages: 1,
+};
+
 /* ===================== CORE LEAD FUNCTIONS ===================== */
 
+// Kept for call sites that only need a bounded preview list (server now
+// paginates this under the hood, sorted newest-first).
 export const getLeadsByRole = async (
   role: string,
   csrId?: string,
@@ -49,6 +71,59 @@ export const getLeadsByRole = async (
   } catch (err: any) {
     console.error("Fetch Leads Error:", err.message);
     return [];
+  }
+};
+
+// Paginated variant for lists/tables that need page controls + accurate totals.
+export const getAllLeadsPaginated = async (
+  page = 1,
+  limit = 20,
+): Promise<PaginatedLeadsResult> => {
+  try {
+    const res = await http.get<PaginatedApiResponse<Lead[]>>(
+      "/lead/get-all-leads",
+      { params: { page, limit } },
+    );
+    return {
+      data: res.data.data || [],
+      totalCount: res.data.totalCount ?? 0,
+      page: res.data.page ?? page,
+      totalPages: res.data.totalPages ?? 1,
+    };
+  } catch (err: any) {
+    console.error("Fetch All Leads Error:", err.message);
+    return EMPTY_PAGE;
+  }
+};
+
+// Leads scoped to a day/week/month window, paginated at the DB level.
+// CSRs always get their own leads; admins get everything, or a single
+// CSR's leads when `csrId` is passed.
+export const getLeadsByDateFiltered = async (
+  filter: "day" | "week" | "month",
+  opts?: { page?: number; limit?: number; csrId?: string },
+): Promise<PaginatedLeadsResult> => {
+  try {
+    const res = await http.get<PaginatedApiResponse<Lead[]>>(
+      "/lead/get-leads-by-date",
+      {
+        params: {
+          filter,
+          page: opts?.page,
+          limit: opts?.limit,
+          csrId: opts?.csrId || undefined,
+        },
+      },
+    );
+    return {
+      data: res.data.data || [],
+      totalCount: res.data.totalCount ?? 0,
+      page: res.data.page ?? opts?.page ?? 1,
+      totalPages: res.data.totalPages ?? 1,
+    };
+  } catch (err: any) {
+    console.error("Fetch Leads By Date Error:", err.message);
+    return EMPTY_PAGE;
   }
 };
 

@@ -1,21 +1,11 @@
 "use client";
 
 import { useState, lazy, Suspense } from "react";
-import axios from "axios";
+import http from "@/services/http";
+import type { Lead } from "@/services/lead.api";
 
 // Lazy-load modal for production optimization
 const ConvertLeadModal = lazy(() => import("./ConvertLeadModel"));
-
-// Interface for a lead
-export interface Lead {
-  _id: string;
-  name: string;
-  phone: string;
-  course: string;
-  source?: string;
-  status: string;
-  createdAt: string;
-}
 
 // Props for LeadList
 interface LeadListProps {
@@ -32,10 +22,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
     if (!confirm("Are you sure you want to delete this lead?")) return;
 
     try {
-      const token = localStorage.getItem("token");
-      await axios.delete(`/api/v1/lead/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await http.delete(`/lead/delete-leads/${id}`);
       refreshLeads();
     } catch (err: any) {
       console.error("Delete lead error:", err);
@@ -83,7 +70,7 @@ export default function LeadList({ leads, refreshLeads, role }: LeadListProps) {
               </td>
 
               <td className="p-3 border">
-                {new Date(lead.createdAt).toLocaleDateString()}
+                {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : "-"}
               </td>
 
               <td className="p-3 border text-center flex justify-center gap-2">
