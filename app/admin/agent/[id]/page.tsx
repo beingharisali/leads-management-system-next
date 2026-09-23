@@ -16,6 +16,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
+import { isClosedStatus, canSetFollowUp } from "@/utils/leadStatus";
 import {
     FiArrowLeft, FiCheckCircle, FiPhone, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiEye,
@@ -39,10 +40,6 @@ interface Lead {
     saleAmount?: number;
 }
 
-// Statuses that close a lead out - mirrors server/models/leads.js
-// CLOSED_STATUSES. Once here, a lead has no follow-up date and stops
-// showing up in the today/week/month due-date views.
-const CLOSED_STATUSES = ["paid", "sale", "not interested", "converted"];
 
 // Admin-only view of a single agent's dashboard: same live pipeline the
 // CSR sees on /csr/dashboard, but reachable straight from the admin
@@ -434,7 +431,7 @@ export default function AdminAgentDashboard() {
                                         </td>
 
                                         <td className="px-6 py-4">
-                                            {!CLOSED_STATUSES.includes(lead.status.toLowerCase()) ? (
+                                            {canSetFollowUp(lead.status) ? (
                                                 <input
                                                     type="date"
                                                     title="Pick a specific day for this lead to reappear on - overrides the automatic next-day rollover"
@@ -452,7 +449,7 @@ export default function AdminAgentDashboard() {
                                                     className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
                                                 />
                                             ) : (
-                                                <span className="text-slate-400 text-xs">Closed</span>
+                                                <span className="text-slate-400 text-xs">{isClosedStatus(lead.status) ? "Closed" : "-"}</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `${lead.saleAmount}` : "-"}</td>

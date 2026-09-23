@@ -26,6 +26,7 @@ export interface Lead {
   followUpDate?: string;
   assignedTo?: { _id: string; name: string; email: string } | string | null;
   createdAt: string;
+  statusUpdatedAt?: string;
   saleAmount?: number;
   source?: string;
   city?: string;

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
     getLeadsByRole,
@@ -17,9 +18,10 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
+import { isClosedStatus, canSetFollowUp } from "@/utils/leadStatus";
 import {
     FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
-    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck,
+    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck, FiArchive,
     FiChevronLeft, FiChevronRight // New Icons for Pagination
 } from "react-icons/fi";
 
@@ -40,11 +42,6 @@ interface Lead {
 
     saleAmount?: number;
 }
-
-// Statuses that close a lead out - mirrors server/models/leads.js
-// CLOSED_STATUSES. Once here, a lead has no follow-up date and stops
-// showing up in the today/week/month due-date views.
-const CLOSED_STATUSES = ["paid", "sale", "not interested", "converted"];
 
 export default function CSRDashboard() {
     const router = useRouter();
@@ -75,6 +72,9 @@ export default function CSRDashboard() {
     });
 
     const statusOptions = ["new", "not pick", "interested", "paid", "not interested", "busy", "wrong number",];
+    // Only open statuses can appear on this dashboard - closed leads live
+    // on the Closed Leads page - so the column filter only offers these.
+    const openStatusOptions = statusOptions.filter(s => !isClosedStatus(s));
 
     const fetchData = useCallback(async (isSilent = false) => {
         try {
@@ -84,7 +84,10 @@ export default function CSRDashboard() {
             if (!role || !userId) { logout(); return router.push("/login"); }
 
             const leadsRes = await getLeadsByRole(role, undefined, userId);
-            setLeads(Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : []);
+            // Paid / Not Interested / Wrong Number leads are closed: they
+            // drop off the working dashboard (see /csr/leads/closed).
+            const allLeads = Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : [];
+            setLeads(allLeads.filter(l => !isClosedStatus(l.status)));
         } catch (err) { toast.error("Failed to load dashboard data"); }
         finally { setLoading(false); }
     }, [router]);
@@ -153,9 +156,9 @@ export default function CSRDashboard() {
     // --- Core Filtering Logic ---
     // Date filters key off `followUpDate` (when the lead is next due for
     // contact), not `createdAt`. The server keeps that date up to date:
-    // Paid/Not Interested clears it (lead closes out, drops out of every
-    // day/week/month view below), any other status change rolls it to
-    // tomorrow, and a CSR-picked date is respected as-is. "today" and
+    // closed statuses clear it (and those leads aren't loaded here at
+    // all), any other status change rolls it to tomorrow, and a date the
+    // CSR picked for a Not Pick/Interested/Busy lead is respected as-is. "today" and
     // every other window include anything overdue so a lead never
     // silently disappears if a CSR misses a day.
     const filteredLeads = useMemo(() => {
@@ -256,18 +259,13 @@ export default function CSRDashboard() {
 
     const metrics = useMemo(() => {
         const getCount = (status: string) => filteredLeads.filter(l => l.status.toLowerCase() === status).length;
-        const sales = filteredLeads.filter(l => ["paid", "sale"].includes(l.status.toLowerCase()));
-        const totalRevenue = sales.reduce((sum, l) => sum + (l.saleAmount || 0), 0);
 
         return {
             total: filteredLeads.length,
-            revenue: totalRevenue,
-            paid: sales.length,
             newLeads: getCount("new"),
             notPick: getCount("not pick"),
-            followUp: getCount("follow-up"),
-            notinterested: getCount("not interested"),
-
+            interested: getCount("interested"),
+            busy: getCount("busy"),
         };
     }, [filteredLeads]);
 
@@ -283,9 +281,9 @@ export default function CSRDashboard() {
             }
 
             // Don't send followUpDate here on a plain status change - the
-            // server auto-schedules it (closes out on Paid/Not Interested,
-            // rolls to tomorrow otherwise). Only the dedicated date picker
-            // (below) sends an explicit followUpDate to pin a specific day.
+            // server auto-schedules it (clears it on a closed status, rolls
+            // to tomorrow otherwise). Only the dedicated date picker (below,
+            // Not Pick/Interested/Busy only) sends an explicit followUpDate.
 
             if (normalizedStatus === "paid" || normalizedStatus === "sale") {
                 const amount = prompt("Enter Sale Amount:");
@@ -298,6 +296,13 @@ export default function CSRDashboard() {
                 updatedLeadData = await updateLead(id, data);
             }
 
+            // A closed status takes the lead off this dashboard right away.
+            if (isClosedStatus(normalizedStatus)) {
+                setLeads(prev => prev.filter(l => l._id !== id));
+                toast.success(`Lead closed as ${normalizedStatus!.toUpperCase()}`, { id: tid });
+                fetchData(true);
+                return;
+            }
 
             setLeads(prev => prev.map(l =>
                 l._id === id
@@ -313,9 +318,9 @@ export default function CSRDashboard() {
             toast.success("Success", { id: tid });
             fetchData(true);
 
-        } catch (err) {
+        } catch (err: any) {
             console.error("Update error detailed logs:", err);
-            toast.error("Update failed. Check console for details.", { id: tid });
+            toast.error(err?.message || "Update failed. Check console for details.", { id: tid });
         }
     };
 
@@ -368,6 +373,7 @@ export default function CSRDashboard() {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
+                            <Link href="/csr/leads/closed" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiArchive /> Closed Leads</Link>
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                             <button onClick={logout} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm border border-slate-100"><FiLogOut size={20} /></button>
                         </div>
@@ -392,9 +398,9 @@ export default function CSRDashboard() {
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} icon={<FiPlus />} color="blue" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} icon={<FiPhone />} color="orange" />
-                    <SummaryCard title="Not Interested" value={metrics.notinterested.toString()} icon={<FiSlash />} color="orange" />
-                    <SummaryCard title="Paid Sales" value={metrics.paid.toString()} icon={<FiCheckCircle />} color="green" />
-                    <SummaryCard title="Total Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
+                    <SummaryCard title="Interested" value={metrics.interested.toString()} icon={<FiUserCheck />} color="green" />
+                    <SummaryCard title="Busy" value={metrics.busy.toString()} icon={<FiClock />} color="indigo" />
+                    <SummaryCard title="Open Leads Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
 
                 {/* Main Table */}
@@ -418,7 +424,7 @@ export default function CSRDashboard() {
                                     </th>
                                     <th className="px-6 py-5">
                                         <span className="inline-flex items-center">Status
-                                            <ColumnFilterDropdown label="Status" options={statusOptions.map(s => ({ value: s, label: s.toUpperCase() }))} selected={selectedStatuses} onChange={setSelectedStatuses} />
+                                            <ColumnFilterDropdown label="Status" options={openStatusOptions.map(s => ({ value: s, label: s.toUpperCase() }))} selected={selectedStatuses} onChange={setSelectedStatuses} />
                                         </span>
                                     </th>
                                     <th className="px-6 py-5">Remarks</th>
@@ -458,7 +464,7 @@ export default function CSRDashboard() {
                                         </td>
 
                                         <td className="px-6 py-4">
-                                            {!CLOSED_STATUSES.includes(lead.status.toLowerCase()) ? (
+                                            {canSetFollowUp(lead.status) ? (
                                                 <input
                                                     type="date"
                                                     title="Pick a specific day for this lead to reappear on - overrides the automatic next-day rollover"
@@ -476,7 +482,12 @@ export default function CSRDashboard() {
                                                     className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
                                                 />
                                             ) : (
-                                                <span className="text-slate-400 text-xs">Closed</span>
+                                                <span
+                                                    className="text-slate-400 text-xs"
+                                                    title="Set status to Not Pick, Interested or Busy to schedule a follow-up"
+                                                >
+                                                    -
+                                                </span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `${lead.saleAmount}` : "-"}</td>
