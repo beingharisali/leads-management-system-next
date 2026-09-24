@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
@@ -20,7 +21,7 @@ import { isClosedStatus, canSetFollowUp } from "@/utils/leadStatus";
 import {
     FiArrowLeft, FiCheckCircle, FiPhone, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiEye,
-    FiChevronLeft, FiChevronRight
+    FiChevronLeft, FiChevronRight, FiArchive
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -238,6 +239,10 @@ export default function AdminAgentDashboard() {
         };
     }, [filteredLeads]);
 
+    // Share of the currently shown leads, rounded to one decimal (0 when empty)
+    const percentOfTotal = (count: number) =>
+        metrics.total > 0 ? Math.round((count / metrics.total) * 1000) / 10 : 0;
+
     const handleUpdate = async (id: string, data: Partial<Lead>) => {
         const tid = toast.loading("Updating...");
         try {
@@ -326,6 +331,13 @@ export default function AdminAgentDashboard() {
                         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                             <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" className="hidden" />
 
+                            <Link
+                                href={`/admin/agent/${csrId}/closed?name=${encodeURIComponent(agentName)}`}
+                                className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"
+                            >
+                                <FiArchive /> Closed Leads
+                            </Link>
+
                             <button
                                 onClick={() => fileInputRef.current?.click()}
                                 className="px-5 py-3 bg-emerald-500 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all"
@@ -363,10 +375,10 @@ export default function AdminAgentDashboard() {
 
                 {/* Summary Metrics Grid */}
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <SummaryCard title="New Leads" value={metrics.newLeads.toString()} icon={<FiPlus />} color="blue" />
-                    <SummaryCard title="Not Picked" value={metrics.notPick.toString()} icon={<FiPhone />} color="orange" />
-                    <SummaryCard title="Not Interested" value={metrics.notinterested.toString()} icon={<FiSlash />} color="orange" />
-                    <SummaryCard title="Paid Sales" value={metrics.paid.toString()} icon={<FiCheckCircle />} color="green" />
+                    <SummaryCard title="New Leads" value={metrics.newLeads.toString()} percentage={percentOfTotal(metrics.newLeads)} icon={<FiPlus />} color="blue" />
+                    <SummaryCard title="Not Picked" value={metrics.notPick.toString()} percentage={percentOfTotal(metrics.notPick)} icon={<FiPhone />} color="orange" />
+                    <SummaryCard title="Not Interested" value={metrics.notinterested.toString()} percentage={percentOfTotal(metrics.notinterested)} icon={<FiSlash />} color="orange" />
+                    <SummaryCard title="Paid Sales" value={metrics.paid.toString()} percentage={percentOfTotal(metrics.paid)} icon={<FiCheckCircle />} color="green" />
                     <SummaryCard title="Total Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
 

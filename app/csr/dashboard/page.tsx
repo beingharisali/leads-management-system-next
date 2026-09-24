@@ -269,6 +269,10 @@ export default function CSRDashboard() {
         };
     }, [filteredLeads]);
 
+    // Share of the currently shown leads, rounded to one decimal (0 when empty)
+    const percentOfTotal = (count: number) =>
+        metrics.total > 0 ? Math.round((count / metrics.total) * 1000) / 10 : 0;
+
     const handleUpdate = async (id: string, data: Partial<Lead>) => {
         const tid = toast.loading("Updating...");
         try {
@@ -396,10 +400,10 @@ export default function CSRDashboard() {
 
                 {/* Summary Metrics Grid */}
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <SummaryCard title="New Leads" value={metrics.newLeads.toString()} icon={<FiPlus />} color="blue" />
-                    <SummaryCard title="Not Picked" value={metrics.notPick.toString()} icon={<FiPhone />} color="orange" />
-                    <SummaryCard title="Interested" value={metrics.interested.toString()} icon={<FiUserCheck />} color="green" />
-                    <SummaryCard title="Busy" value={metrics.busy.toString()} icon={<FiClock />} color="indigo" />
+                    <SummaryCard title="New Leads" value={metrics.newLeads.toString()} percentage={percentOfTotal(metrics.newLeads)} icon={<FiPlus />} color="blue" />
+                    <SummaryCard title="Not Picked" value={metrics.notPick.toString()} percentage={percentOfTotal(metrics.notPick)} icon={<FiPhone />} color="orange" />
+                    <SummaryCard title="Interested" value={metrics.interested.toString()} percentage={percentOfTotal(metrics.interested)} icon={<FiUserCheck />} color="green" />
+                    <SummaryCard title="Busy" value={metrics.busy.toString()} percentage={percentOfTotal(metrics.busy)} icon={<FiClock />} color="indigo" />
                     <SummaryCard title="Open Leads Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
 

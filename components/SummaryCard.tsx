@@ -23,6 +23,8 @@ interface SummaryCardProps {
     // Updated: Added 'indigo' and 'slate' to the allowed types
     color?: "purple" | "green" | "blue" | "rose" | "orange" | "indigo" | "slate";
     progress?: number;
+    // Share of a total, shown beside the value (also drives the progress bar)
+    percentage?: number;
 }
 
 /* ================= COMPONENT ================= */
@@ -33,8 +35,10 @@ export default function SummaryCard({
     trend,
     icon,
     color = "purple",
-    progress = 70
+    progress = 70,
+    percentage
 }: SummaryCardProps) {
+    const barWidth = percentage !== undefined ? percentage : progress;
 
     const themes = {
         purple: {
@@ -119,8 +123,13 @@ export default function SummaryCard({
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
                         {title}
                     </p>
-                    <h3 className="text-2xl md:text-3xl font-black text-slate-800 tracking-tight">
+                    <h3 className="text-2xl md:text-3xl font-black text-slate-800 tracking-tight flex items-baseline gap-2">
                         {value}
+                        {percentage !== undefined && (
+                            <span className={`text-sm md:text-base font-black ${theme.text}`}>
+                                {percentage}%
+                            </span>
+                        )}
                     </h3>
                 </div>
 
@@ -145,7 +154,7 @@ export default function SummaryCard({
                 <div className="flex-1 h-2 bg-slate-100/50 rounded-full overflow-hidden">
                     <div
                         className={`h-full rounded-full transition-all duration-1000 ease-out ${theme.bar} opacity-60 group-hover:opacity-100 origin-left`}
-                        style={{ width: `${progress}%` }}
+                        style={{ width: `${barWidth}%` }}
                     ></div>
                 </div>
 
