@@ -17,7 +17,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey } from "@/utils/leadStatus";
 import {
     FiArrowLeft, FiCheckCircle, FiPhone, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiEye,
@@ -69,6 +69,7 @@ export default function AdminAgentDashboard() {
     // Column header filters (checkbox multi-select, empty = no filter)
     const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
     const [selectedCities, setSelectedCities] = useState<string[]>([]);
+    const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
     const [selectedSources, setSelectedSources] = useState<string[]>([]);
     const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
@@ -94,12 +95,13 @@ export default function AdminAgentDashboard() {
     // Reset to page 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, dateFilter, customDates, selectedMonths, selectedCities, selectedSources, selectedStatuses]);
+    }, [searchTerm, dateFilter, customDates, selectedMonths, selectedCities, selectedCourses, selectedSources, selectedStatuses]);
 
     // Column filter option lists - derived from the full (unfiltered) lead
     // set so a chosen filter never removes its own options from the list.
     const monthOptions = useMemo(() => monthOptionsFrom(leads.map(l => l.createdAt)), [leads]);
     const cityOptions = useMemo(() => textOptionsFrom(leads.map(l => l.city)), [leads]);
+    const courseOptions = useMemo(() => textOptionsFrom(leads.map(l => l.course)), [leads]);
     const sourceOptions = useMemo(() => textOptionsFrom(leads.map(l => l.source)), [leads]);
 
     // --- Excel Import Logic (assigns straight to this agent) ---
@@ -151,6 +153,10 @@ export default function AdminAgentDashboard() {
                 selectedCities.length === 0 ||
                 selectedCities.includes((l.city || "").trim().toLowerCase());
 
+            const matchesCourse =
+                selectedCourses.length === 0 ||
+                selectedCourses.includes((l.course || "").trim().toLowerCase());
+
             const matchesSource =
                 selectedSources.length === 0 ||
                 selectedSources.includes((l.source || "").trim().toLowerCase());
@@ -201,6 +207,7 @@ export default function AdminAgentDashboard() {
                 matchesStatus &&
                 matchesMonth &&
                 matchesCity &&
+                matchesCourse &&
                 matchesSource &&
                 matchesDate
             );
@@ -212,6 +219,7 @@ export default function AdminAgentDashboard() {
         customDates,
         selectedMonths,
         selectedCities,
+        selectedCourses,
         selectedSources,
         selectedStatuses
     ]);
@@ -396,6 +404,11 @@ export default function AdminAgentDashboard() {
                                     <th className="px-6 py-5">Lead Name</th>
                                     <th className="px-6 py-5">Phone</th>
                                     <th className="px-6 py-5">
+                                        <span className="inline-flex items-center">Course
+                                            <ColumnFilterDropdown label="Course" options={courseOptions} selected={selectedCourses} onChange={setSelectedCourses} />
+                                        </span>
+                                    </th>
+                                    <th className="px-6 py-5">
                                         <span className="inline-flex items-center">City/Source
                                             <ColumnFilterDropdown label="City" options={cityOptions} selected={selectedCities} onChange={setSelectedCities} />
                                             <ColumnFilterDropdown label="Source" options={sourceOptions} selected={selectedSources} onChange={setSelectedSources} />
@@ -417,6 +430,7 @@ export default function AdminAgentDashboard() {
                                         <td className="px-6 py-4 text-xs font-medium text-slate-500">{new Date(lead.createdAt).toLocaleDateString('en-GB')}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
                                         <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
+                                        <td className="px-6 py-4 text-sm font-semibold text-slate-600">{lead.course || 'N/A'}</td>
                                         <td className="px-6 py-4">
                                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{lead.source || 'N/A'}</div>
                                             <div className="text-xs font-semibold text-slate-600">{lead.city || 'No City'}</div>
@@ -445,17 +459,14 @@ export default function AdminAgentDashboard() {
                                         <td className="px-6 py-4">
                                             {canSetFollowUp(lead.status) ? (
                                                 <input
+                                                    key={lead.followUpDate || "none"}
                                                     type="date"
-                                                    title="Pick a specific day for this lead to reappear on - overrides the automatic next-day rollover"
-                                                    defaultValue={
-                                                        lead.followUpDate
-                                                            ? new Date(lead.followUpDate).toISOString().slice(0, 10)
-                                                            : ""
-                                                    }
+                                                    title="Pick the day the agent should follow up with this lead"
+                                                    defaultValue={lead.followUpDate ? localDateKey(lead.followUpDate) : ""}
                                                     onChange={(e) =>
                                                         e.target.value &&
                                                         handleUpdate(lead._id, {
-                                                            followUpDate: e.target.value
+                                                            followUpDate: new Date(`${e.target.value}T00:00:00`).toISOString()
                                                         })
                                                     }
                                                     className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
@@ -467,7 +478,7 @@ export default function AdminAgentDashboard() {
                                         <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `${lead.saleAmount}` : "-"}</td>
                                     </tr>
                                 )) : (
-                                    <tr><td colSpan={8} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
+                                    <tr><td colSpan={9} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
                                 )}
                             </tbody>
                         </table>

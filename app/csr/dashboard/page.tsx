@@ -18,11 +18,12 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey } from "@/utils/leadStatus";
 import {
     FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck, FiArchive,
-    FiChevronLeft, FiChevronRight // New Icons for Pagination
+    FiChevronLeft, FiChevronRight, // New Icons for Pagination
+    FiBell
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -51,6 +52,7 @@ export default function CSRDashboard() {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const notifiedLeadsRef = useRef<Record<string, boolean>>({});
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
     // --- Pagination States ---
     const [currentPage, setCurrentPage] = useState(1);
@@ -63,6 +65,7 @@ export default function CSRDashboard() {
     // Column header filters (checkbox multi-select, empty = no filter)
     const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
     const [selectedCities, setSelectedCities] = useState<string[]>([]);
+    const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
     const [selectedSources, setSelectedSources] = useState<string[]>([]);
     const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
@@ -92,43 +95,60 @@ export default function CSRDashboard() {
         finally { setLoading(false); }
     }, [router]);
 
-    useEffect(() => {
-        if (leads.length === 0) return;
-
-        const todayStr = new Date().toISOString().split('T')[0];
-
-        leads.forEach(lead => {
-
-            if (lead.followUpDate && lead.followUpDate.split('T')[0] === todayStr && !notifiedLeadsRef.current[lead._id]) {
-
-                toast(`Reminder: Call ${lead.name} right now!`, {
-                    icon: '📞',
-                    duration: 6000,
-                    position: "top-center",
-                    style: {
-                        background: '#1E293B',
-                        color: '#fff',
-                        fontWeight: 'bold'
-                    }
-                });
-
-
-                notifiedLeadsRef.current[lead._id] = true;
-            }
-        });
+    // Follow-up reminders: Interested leads whose CSR-picked follow-up date
+    // is today (or already passed without being actioned). Not Pick/Busy
+    // leads roll to the next day automatically, so they never show here.
+    const dueFollowUps = useMemo(() => {
+        const todayKey = localDateKey(new Date());
+        return leads
+            .filter(l =>
+                l.status.toLowerCase() === "interested" &&
+                l.followUpDate &&
+                localDateKey(l.followUpDate) <= todayKey
+            )
+            .map(l => ({ ...l, isOverdue: localDateKey(l.followUpDate!) < todayKey }))
+            .sort((a, b) => new Date(a.followUpDate!).getTime() - new Date(b.followUpDate!).getTime());
     }, [leads]);
 
+    // Pop a toast whenever a follow-up becomes due that hasn't been announced
+    // yet this session (on load, and after midnight via the periodic refresh).
+    useEffect(() => {
+        const fresh = dueFollowUps.filter(l => !notifiedLeadsRef.current[l._id]);
+        if (fresh.length === 0) return;
+        fresh.forEach(l => { notifiedLeadsRef.current[l._id] = true; });
+
+        toast(
+            fresh.length === 1
+                ? `Follow-up due: call ${fresh[0].name} (${fresh[0].phone})`
+                : `${fresh.length} interested leads need a follow-up call today`,
+            {
+                icon: '🔔',
+                duration: 8000,
+                position: "top-center",
+                style: { background: '#1E293B', color: '#fff', fontWeight: 'bold' }
+            }
+        );
+    }, [dueFollowUps]);
+
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Silently re-fetch every 5 minutes so follow-ups that become due while
+    // the dashboard is left open (e.g. past midnight) still get announced.
+    useEffect(() => {
+        const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [fetchData]);
 
     // Reset to page 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, dateFilter, customDates, selectedMonths, selectedCities, selectedSources, selectedStatuses]);
+    }, [searchTerm, dateFilter, customDates, selectedMonths, selectedCities, selectedCourses, selectedSources, selectedStatuses]);
 
     // Column filter option lists - derived from the full (unfiltered) lead
     // set so a chosen filter never removes its own options from the list.
     const monthOptions = useMemo(() => monthOptionsFrom(leads.map(l => l.createdAt)), [leads]);
     const cityOptions = useMemo(() => textOptionsFrom(leads.map(l => l.city)), [leads]);
+    const courseOptions = useMemo(() => textOptionsFrom(leads.map(l => l.course)), [leads]);
     const sourceOptions = useMemo(() => textOptionsFrom(leads.map(l => l.source)), [leads]);
 
     // --- Excel Import Logic ---
@@ -157,8 +177,9 @@ export default function CSRDashboard() {
     // Date filters key off `followUpDate` (when the lead is next due for
     // contact), not `createdAt`. The server keeps that date up to date:
     // closed statuses clear it (and those leads aren't loaded here at
-    // all), any other status change rolls it to tomorrow, and a date the
-    // CSR picked for a Not Pick/Interested/Busy lead is respected as-is. "today" and
+    // all), any other status change rolls it to tomorrow (Not Pick/Busy
+    // always do), and a date the CSR picked for an Interested lead is
+    // respected as-is. "today" and
     // every other window include anything overdue so a lead never
     // silently disappears if a CSR misses a day.
     const filteredLeads = useMemo(() => {
@@ -185,6 +206,10 @@ export default function CSRDashboard() {
             const matchesCity =
                 selectedCities.length === 0 ||
                 selectedCities.includes((l.city || "").trim().toLowerCase());
+
+            const matchesCourse =
+                selectedCourses.length === 0 ||
+                selectedCourses.includes((l.course || "").trim().toLowerCase());
 
             const matchesSource =
                 selectedSources.length === 0 ||
@@ -236,6 +261,7 @@ export default function CSRDashboard() {
                 matchesStatus &&
                 matchesMonth &&
                 matchesCity &&
+                matchesCourse &&
                 matchesSource &&
                 matchesDate
             );
@@ -247,6 +273,7 @@ export default function CSRDashboard() {
         customDates,
         selectedMonths,
         selectedCities,
+        selectedCourses,
         selectedSources,
         selectedStatuses
     ]);
@@ -287,7 +314,7 @@ export default function CSRDashboard() {
             // Don't send followUpDate here on a plain status change - the
             // server auto-schedules it (clears it on a closed status, rolls
             // to tomorrow otherwise). Only the dedicated date picker (below,
-            // Not Pick/Interested/Busy only) sends an explicit followUpDate.
+            // Interested only) sends an explicit followUpDate.
 
             if (normalizedStatus === "paid" || normalizedStatus === "sale") {
                 const amount = prompt("Enter Sale Amount:");
@@ -377,6 +404,52 @@ export default function CSRDashboard() {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
+                            <div className="relative">
+                                <button
+                                    onClick={() => setIsNotificationsOpen(o => !o)}
+                                    title="Follow-up reminders"
+                                    className="relative p-3 bg-white text-slate-700 rounded-2xl shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"
+                                >
+                                    <FiBell size={20} />
+                                    {dueFollowUps.length > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center bg-rose-500 text-white text-[10px] font-black rounded-full">
+                                            {dueFollowUps.length}
+                                        </span>
+                                    )}
+                                </button>
+
+                                {isNotificationsOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)} />
+                                        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden">
+                                            <div className="px-4 py-3 border-b border-slate-100">
+                                                <p className="text-sm font-black text-slate-800">Follow-ups due</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Interested leads scheduled for today</p>
+                                            </div>
+                                            <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
+                                                {dueFollowUps.length === 0 ? (
+                                                    <p className="px-4 py-8 text-center text-xs text-slate-400">No follow-ups due today.</p>
+                                                ) : dueFollowUps.map(l => (
+                                                    <button
+                                                        key={l._id}
+                                                        onClick={() => { setSearchTerm(l.phone); setDateFilter("all"); setIsNotificationsOpen(false); }}
+                                                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="font-bold text-sm text-slate-800 truncate">{l.name}</span>
+                                                            <span className={`shrink-0 text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${l.isOverdue ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-700'}`}>
+                                                                {l.isOverdue ? `Overdue · ${new Date(l.followUpDate!).toLocaleDateString('en-GB')}` : 'Today'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-xs text-blue-600 font-semibold">{l.phone}</div>
+                                                        {l.course && <div className="text-[10px] text-slate-400 truncate">{l.course}</div>}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                             <Link href="/csr/leads/closed" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiArchive /> Closed Leads</Link>
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                             <button onClick={logout} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm border border-slate-100"><FiLogOut size={20} /></button>
@@ -421,6 +494,11 @@ export default function CSRDashboard() {
                                     <th className="px-6 py-5">Lead Name</th>
                                     <th className="px-6 py-5">Phone</th>
                                     <th className="px-6 py-5">
+                                        <span className="inline-flex items-center">Course
+                                            <ColumnFilterDropdown label="Course" options={courseOptions} selected={selectedCourses} onChange={setSelectedCourses} />
+                                        </span>
+                                    </th>
+                                    <th className="px-6 py-5">
                                         <span className="inline-flex items-center">City/Source
                                             <ColumnFilterDropdown label="City" options={cityOptions} selected={selectedCities} onChange={setSelectedCities} />
                                             <ColumnFilterDropdown label="Source" options={sourceOptions} selected={selectedSources} onChange={setSelectedSources} />
@@ -442,6 +520,7 @@ export default function CSRDashboard() {
                                         <td className="px-6 py-4 text-xs font-medium text-slate-500">{new Date(lead.createdAt).toLocaleDateString('en-GB')}</td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
                                         <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
+                                        <td className="px-6 py-4 text-sm font-semibold text-slate-600">{lead.course || 'N/A'}</td>
                                         <td className="px-6 py-4">
                                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{lead.source || 'N/A'}</div>
                                             <div className="text-xs font-semibold text-slate-600">{lead.city || 'No City'}</div>
@@ -470,17 +549,16 @@ export default function CSRDashboard() {
                                         <td className="px-6 py-4">
                                             {canSetFollowUp(lead.status) ? (
                                                 <input
+                                                    key={lead.followUpDate || "none"}
                                                     type="date"
-                                                    title="Pick a specific day for this lead to reappear on - overrides the automatic next-day rollover"
-                                                    defaultValue={
-                                                        lead.followUpDate
-                                                            ? new Date(lead.followUpDate).toISOString().slice(0, 10)
-                                                            : ""
-                                                    }
+                                                    title="Pick the day to follow up with this lead - you'll get a reminder on that date"
+                                                    min={localDateKey(new Date())}
+                                                    defaultValue={lead.followUpDate ? localDateKey(lead.followUpDate) : ""}
                                                     onChange={(e) =>
                                                         e.target.value &&
                                                         handleUpdate(lead._id, {
-                                                            followUpDate: e.target.value
+                                                            // Local midnight, so the reminder fires on the picked day in the CSR's timezone
+                                                            followUpDate: new Date(`${e.target.value}T00:00:00`).toISOString()
                                                         })
                                                     }
                                                     className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
@@ -488,7 +566,9 @@ export default function CSRDashboard() {
                                             ) : (
                                                 <span
                                                     className="text-slate-400 text-xs"
-                                                    title="Set status to Not Pick, Interested or Busy to schedule a follow-up"
+                                                    title={["not pick", "busy"].includes(lead.status.toLowerCase())
+                                                        ? "Automatically moved to the next day"
+                                                        : "Set status to Interested to schedule a follow-up"}
                                                 >
                                                     -
                                                 </span>
@@ -497,7 +577,7 @@ export default function CSRDashboard() {
                                         <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `${lead.saleAmount}` : "-"}</td>
                                     </tr>
                                 )) : (
-                                    <tr><td colSpan={8} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
+                                    <tr><td colSpan={9} className="text-center py-20 text-slate-400">No matching leads found.</td></tr>
                                 )}
                             </tbody>
                         </table>
