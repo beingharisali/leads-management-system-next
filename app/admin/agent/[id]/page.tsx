@@ -12,6 +12,7 @@ import {
     bulkInsertLeads
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
+import CsrActivityCard from "@/components/CsrActivityCard";
 import Loading from "@/components/Loading";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -365,6 +366,8 @@ export default function AdminAgentDashboard() {
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                         </div>
                     </div>
+
+                    <CsrActivityCard csrId={csrId} />
 
                     {/* Date Filters */}
                     <div className="mt-6 flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 w-fit">

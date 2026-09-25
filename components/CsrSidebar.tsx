@@ -1,8 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { FiUsers, FiActivity, FiInfo, FiPower, FiExternalLink } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
+import { getAllCsrPresence, CsrPresence } from "@/services/activity.api";
+
+// Short, so "Offline" shows within seconds of a CSR leaving their portal
+const PRESENCE_REFRESH_MS = 10 * 1000;
 
 /* ================= TYPES ================= */
 
@@ -29,6 +33,26 @@ interface Props {
 /* ================= MAIN COMPONENT ================= */
 
 export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleStatus, onOpenDashboard }: Props) {
+    // Live "on their portal right now" status per CSR - separate from the
+    // Active/Inactive account switch above it.
+    const [presence, setPresence] = useState<Record<string, CsrPresence>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = () =>
+            getAllCsrPresence()
+                .then(list => {
+                    if (!cancelled) setPresence(Object.fromEntries(list.map(p => [p.csrId, p])));
+                })
+                .catch(() => { /* keep showing the last known status */ });
+
+        load();
+        const interval = setInterval(load, PRESENCE_REFRESH_MS);
+        return () => { cancelled = true; clearInterval(interval); };
+    }, []);
+
+    const onlineCount = Object.values(presence).filter(p => p.isOnline).length;
+
     return (
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-6 flex flex-col h-[calc(100vh-140px)] w-full sticky top-8">
 
@@ -43,9 +67,14 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Management</p>
                     </div>
                 </div>
-                <span className="bg-slate-100 text-slate-500 text-[10px] px-3 py-1.5 rounded-xl font-black uppercase tracking-tight">
-                    {csrs.length} Agents
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                    <span className="bg-slate-100 text-slate-500 text-[10px] px-3 py-1.5 rounded-xl font-black uppercase tracking-tight">
+                        {csrs.length} Agents
+                    </span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">
+                        {onlineCount} Online
+                    </span>
+                </div>
             </div>
 
             {/* Global Overview Button */}
@@ -115,6 +144,7 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                                                     {isActive ? 'Active' : 'Inactive'}
                                                 </span>
                                             </div>
+                                            <PresenceLine presence={presence[actualId]} />
                                         </div>
 
                                         {/* Status Toggle Button: Fixed Event Handling */}
@@ -158,6 +188,46 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
 }
 
 /* ================= HELPER COMPONENTS ================= */
+
+const formatShort = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+const formatLastSeen = (iso: string) => {
+    const d = new Date(iso);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return sameDay
+        ? d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+        : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+};
+
+// Whether the CSR has their portal on screen right now, plus today's time
+function PresenceLine({ presence }: { presence?: CsrPresence }) {
+    if (!presence) {
+        return (
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">Never on portal</p>
+        );
+    }
+
+    return (
+        <p className="mt-1 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            {presence.isOnline ? (
+                <span className="flex items-center gap-1 text-emerald-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> On portal now
+                </span>
+            ) : (
+                <span className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                    {presence.lastSeenAt ? `Offline · ${formatLastSeen(presence.lastSeenAt)}` : "Offline"}
+                </span>
+            )}
+            <span className="text-slate-300">·</span>
+            <span>{formatShort(presence.todaySeconds)} today</span>
+        </p>
+    );
+}
 
 function StatBox({ label, value, isSelected, color = "text-slate-700" }: { label: string, value: string | number, isSelected: boolean, color?: string }) {
     return (
