@@ -31,9 +31,10 @@ export const sendHeartbeat = (kind: HeartbeatKind) => {
   }).catch(() => { /* a missed ping only costs one interval */ });
 };
 
-// Admin only
-export const getCsrActivity = async (csrId: string, days = 7): Promise<CsrActivity> => {
-  const res = await http.get(`/activity/csr/${csrId}`, { params: { days } });
+// Admin only. `month` is "YYYY-MM": history then holds every day of that
+// month (up to today), oldest first.
+export const getCsrActivity = async (csrId: string, month: string): Promise<CsrActivity> => {
+  const res = await http.get(`/activity/csr/${csrId}`, { params: { month } });
   return res.data.data;
 };
 

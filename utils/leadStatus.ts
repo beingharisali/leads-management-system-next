@@ -23,3 +23,23 @@ export const localDateKey = (date: string | Date) => {
     const dd = String(d.getDate()).padStart(2, "0");
     return `${d.getFullYear()}-${mm}-${dd}`;
 };
+
+// Whole calendar days since the lead entered the system (local timezone),
+// so a lead created late yesterday is "1 day" old this morning.
+export const leadAgeDays = (createdAt: string | Date) => {
+    const start = new Date(createdAt);
+    start.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((today.getTime() - start.getTime()) / 86_400_000));
+};
+
+export const leadAgeLabel = (days: number) =>
+    days === 0 ? "Today" : days === 1 ? "1 day old" : `${days} days old`;
+
+// Green while fresh, amber after a week, red after two - an old lead that
+// is still open is likely going cold.
+export const leadAgeClass = (days: number) =>
+    days >= 14 ? "bg-red-100 text-red-700" :
+    days >= 7 ? "bg-amber-100 text-amber-700" :
+    "bg-green-100 text-green-700";

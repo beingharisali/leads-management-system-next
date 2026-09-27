@@ -18,7 +18,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp, localDateKey } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass } from "@/utils/leadStatus";
 import {
     FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck, FiArchive,
@@ -517,10 +517,36 @@ export default function CSRDashboard() {
                             <tbody className="divide-y divide-slate-50">
                                 {paginatedLeads.length > 0 ? paginatedLeads.map((lead) => (
                                     <tr key={lead._id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4 text-xs font-medium text-slate-500">{new Date(lead.createdAt).toLocaleDateString('en-GB')}</td>
+                                        <td className="px-6 py-4 text-xs font-medium text-slate-500">
+                                            <div>{new Date(lead.createdAt).toLocaleDateString('en-GB')}</div>
+                                            {(() => {
+                                                const age = leadAgeDays(lead.createdAt);
+                                                return (
+                                                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap ${leadAgeClass(age)}`}>
+                                                        {leadAgeLabel(age)}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
                                         <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
                                         <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
-                                        <td className="px-6 py-4 text-sm font-semibold text-slate-600">{lead.course || 'N/A'}</td>
+                                        <td className="px-6 py-4 text-sm font-semibold text-slate-600">
+                                            {/* Blank is rejected (course is required) - it just snaps back */}
+                                            <input
+                                                key={lead.course}
+                                                list="course-suggestions"
+                                                defaultValue={lead.course}
+                                                title="Change this lead's course"
+                                                onBlur={(e) => {
+                                                    const course = e.target.value.trim();
+                                                    if (!course) { e.target.value = lead.course; return; }
+                                                    if (course !== lead.course) handleUpdate(lead._id, { course });
+                                                }}
+                                                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                                                className="bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 outline-none w-full min-w-[120px]"
+                                                placeholder="Course"
+                                            />
+                                        </td>
                                         <td className="px-6 py-4">
                                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{lead.source || 'N/A'}</div>
                                             <div className="text-xs font-semibold text-slate-600">{lead.city || 'No City'}</div>
@@ -581,6 +607,9 @@ export default function CSRDashboard() {
                                 )}
                             </tbody>
                         </table>
+                        <datalist id="course-suggestions">
+                            {courseOptions.map(o => <option key={o.value} value={o.label} />)}
+                        </datalist>
                     </div>
 
                     {/* Pagination UI Controls */}

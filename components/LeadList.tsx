@@ -4,6 +4,7 @@ import { useState, lazy, Suspense } from "react";
 import http from "@/services/http";
 import type { Lead } from "@/services/lead.api";
 import ColumnFilterDropdown, { FilterOption } from "@/components/filters/ColumnFilterDropdown";
+import { leadAgeDays, leadAgeLabel, leadAgeClass } from "@/utils/leadStatus";
 
 // Lazy-load modal for production optimization
 const ConvertLeadModal = lazy(() => import("./ConvertLeadModel"));
@@ -118,7 +119,14 @@ export default function LeadList({
               </td>
 
               <td className="p-3 border">
-                {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString() : "-"}
+                {lead.createdAt ? (
+                  <>
+                    <div>{new Date(lead.createdAt).toLocaleDateString()}</div>
+                    <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${leadAgeClass(leadAgeDays(lead.createdAt))}`}>
+                      {leadAgeLabel(leadAgeDays(lead.createdAt))}
+                    </span>
+                  </>
+                ) : "-"}
               </td>
 
               <td className="p-3 border text-center flex justify-center gap-2">
