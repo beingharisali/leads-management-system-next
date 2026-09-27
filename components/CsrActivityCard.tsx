@@ -3,17 +3,10 @@
 import { useEffect, useState } from "react";
 import { FiClock, FiLogIn, FiSun, FiChevronLeft, FiChevronRight, FiCalendar } from "react-icons/fi";
 import { getCsrActivity, CsrActivity } from "@/services/activity.api";
+import { formatDuration, liveTodaySeconds } from "@/utils/activityTime";
 
 // Short, so the admin sees "Offline" within seconds of the CSR leaving
 const REFRESH_MS = 10 * 1000;
-
-const formatDuration = (totalSeconds: number) => {
-    const s = Math.max(0, Math.floor(totalSeconds));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-};
 
 const formatShort = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -73,14 +66,7 @@ export default function CsrActivityCard({ csrId }: { csrId: string }) {
 
     if (!activity) return null;
 
-    // The server has credited time up to the CSR's last ping. While they're
-    // still on screen, add the time since that ping - measured from the
-    // server's clock, so a page reload shows the same value, not a jump.
-    const sinceLastPing = activity.isOnline && activity.lastSeenAt
-        ? (new Date(activity.serverTime).getTime() - new Date(activity.lastSeenAt).getTime()) / 1000 + (now - fetchedAt) / 1000
-        : 0;
-    const liveExtra = Math.min(Math.max(sinceLastPing, 0), activity.onlineWindowSeconds);
-    const todaySeconds = activity.today.activeSeconds + liveExtra;
+    const todaySeconds = liveTodaySeconds(activity, fetchedAt, now);
 
     // Month calendar: Monday-first grid; today's cell uses the live value
     const todayKey = activity.today.day;

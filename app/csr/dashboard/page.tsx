@@ -17,6 +17,7 @@ import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
+import MyActivityTimer from "@/components/MyActivityTimer";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
 import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass } from "@/utils/leadStatus";
 import {
@@ -383,6 +384,7 @@ export default function CSRDashboard() {
                             <p className="text-slate-500 text-sm font-medium">
                                 Showing {paginatedLeads.length} of {filteredLeads.length} leads
                             </p>
+                            <div className="mt-3"><MyActivityTimer /></div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">

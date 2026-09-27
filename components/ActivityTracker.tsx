@@ -9,7 +9,8 @@ const HEARTBEAT_MS = 30 * 1000;
 // Invisible: tracks how long a CSR has their portal open on screen. While
 // the window is visible it pings the server every 30s; minimising,
 // switching away or closing it sends a final ping and stops the clock, and
-// coming back resumes it. Renders nothing - the CSR never sees a timer.
+// coming back resumes it. Renders nothing - the CSR's own timer is
+// MyActivityTimer on their dashboard.
 export default function ActivityTracker() {
     useEffect(() => {
         let cancelled = false;

@@ -38,6 +38,12 @@ export const getCsrActivity = async (csrId: string, month: string): Promise<CsrA
   return res.data.data;
 };
 
+// CSR only: their own portal time today (history is empty)
+export const getMyActivity = async (): Promise<CsrActivity> => {
+  const res = await http.get("/activity/me");
+  return res.data.data;
+};
+
 export interface CsrPresence {
   csrId: string;
   isOnline: boolean;
