@@ -53,7 +53,7 @@ export default function LeadList({
       refreshLeads();
     } catch (err: any) {
       console.error("Delete lead error:", err);
-      alert(err?.response?.data?.message || "Failed to delete lead");
+      alert(err?.message || "Failed to delete lead");
     }
   };
 

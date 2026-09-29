@@ -23,6 +23,7 @@ const columns: Column[] = [
 export default function AdminLeads() {
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
@@ -30,11 +31,14 @@ export default function AdminLeads() {
     useEffect(() => {
         const fetchLeads = async () => {
             setLoading(true);
+            setError("");
             try {
                 const res = await getAllLeadsPaginated(page, PAGE_SIZE);
                 setLeads(res.data);
                 setTotalPages(res.totalPages);
                 setTotalCount(res.totalCount);
+            } catch (err: any) {
+                setError(err.message || "Failed to load leads");
             } finally {
                 setLoading(false);
             }
@@ -48,6 +52,8 @@ export default function AdminLeads() {
                 <h1 className="text-2xl font-bold mb-4">All Leads ({totalCount})</h1>
                 {loading ? (
                     <p className="text-gray-600">Loading leads...</p>
+                ) : error ? (
+                    <p className="p-4 rounded-lg bg-red-50 text-red-600 font-medium">{error}</p>
                 ) : (
                     <>
                         <DataTable columns={columns} data={leads} />

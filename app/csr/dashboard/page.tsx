@@ -92,7 +92,7 @@ export default function CSRDashboard() {
             // drop off the working dashboard (see /csr/leads/closed).
             const allLeads = Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : [];
             setLeads(allLeads.filter(l => !isClosedStatus(l.status)));
-        } catch (err) { toast.error("Failed to load dashboard data"); }
+        } catch (err: any) { toast.error(err.message || "Failed to load dashboard data"); }
         finally { setLoading(false); }
     }, [router]);
 
@@ -352,7 +352,7 @@ export default function CSRDashboard() {
 
         } catch (err: any) {
             console.error("Update error detailed logs:", err);
-            toast.error(err?.message || "Update failed. Check console for details.", { id: tid });
+            toast.error(err?.message || "Failed to update lead", { id: tid });
         }
     };
 
@@ -366,7 +366,7 @@ export default function CSRDashboard() {
             setIsModalOpen(false);
             setNewLead({ name: "", phone: "", city: "", source: "", course: "", remarks: "" });
             fetchData(true);
-        } catch (err) { toast.error("Failed", { id: tid }); }
+        } catch (err: any) { toast.error(err.message || "Failed to add lead", { id: tid }); }
     };
 
     if (loading) return <Loading />;

@@ -13,6 +13,7 @@ import {
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
 import CsrActivityCard from "@/components/CsrActivityCard";
+import AgentNumbersCard from "@/components/AgentNumbersCard";
 import Loading from "@/components/Loading";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -87,7 +88,7 @@ export default function AdminAgentDashboard() {
             if (!isSilent) setLoading(true);
             const leadsRes = await getLeadsByRole("csr", undefined, csrId);
             setLeads(Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : []);
-        } catch (err) { toast.error("Failed to load agent's dashboard data"); }
+        } catch (err: any) { toast.error(err.message || "Failed to load agent's dashboard data"); }
         finally { setLoading(false); }
     }, [csrId]);
 
@@ -293,7 +294,7 @@ export default function AdminAgentDashboard() {
 
         } catch (err) {
             console.error("Update error detailed logs:", err);
-            toast.error("Update failed. Check console for details.", { id: tid });
+            toast.error((err as any)?.message || "Failed to update lead", { id: tid });
         }
     };
 
@@ -306,7 +307,7 @@ export default function AdminAgentDashboard() {
             setIsModalOpen(false);
             setNewLead({ name: "", phone: "", city: "", source: "", course: "", remarks: "" });
             fetchData(true);
-        } catch (err) { toast.error("Failed", { id: tid }); }
+        } catch (err: any) { toast.error(err.message || "Failed to add lead", { id: tid }); }
     };
 
     if (loading) return <Loading />;
@@ -366,6 +367,8 @@ export default function AdminAgentDashboard() {
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                         </div>
                     </div>
+
+                    <AgentNumbersCard csrId={csrId} />
 
                     <CsrActivityCard csrId={csrId} />
 

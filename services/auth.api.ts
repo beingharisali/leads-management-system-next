@@ -1,4 +1,4 @@
-import http from "./http";
+import http, { getErrorMessage } from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
 export interface User {
@@ -7,6 +7,8 @@ export interface User {
   email: string;
   role: "admin" | "csr";
   status: "active" | "inactive";
+  personalPhone?: string;
+  officialPhone?: string;
 }
 
 export interface AuthResponse {
@@ -37,7 +39,7 @@ export const firstAdminSignup = async (data: { name: string; email: string; pass
     const res = await http.post("/auth/first-admin-signup", data);
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || err.response?.data?.message || "Admin signup failed");
+    throw new Error(getErrorMessage(err, "Admin signup failed"));
   }
 };
 
@@ -50,18 +52,18 @@ export const login = async (email: string, password: string): Promise<AuthRespon
     }
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || err.response?.data?.message || "Login failed");
+    throw new Error(getErrorMessage(err, "Login failed"));
   }
 };
 
 // 3. Create CSR (Agent Registration)
-export const createCSR = async (data: { name: string; email: string; password: string; role?: string }): Promise<AuthResponse> => {
+export const createCSR = async (data: { name: string; email: string; password: string; role?: string; personalPhone?: string; officialPhone?: string }): Promise<AuthResponse> => {
   try {
     const payload = { ...data, role: data.role || "csr" };
     const res = await http.post("/auth/register", payload, getAuthHeaders());
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || err.response?.data?.message || "Only admins can create agents");
+    throw new Error(getErrorMessage(err, "Failed to create agent"));
   }
 };
 
@@ -89,7 +91,7 @@ export const updateCSRStatus = async (csrId: string, targetStatus: string): Prom
     console.log(`[SYNC SUCCESS] Backend updated to: ${res.data?.user?.status}`);
     return res.data;
   } catch (err: any) {
-    const errorMsg = err.response?.data?.msg || err.response?.data?.message || "Status sync failed";
+    const errorMsg = getErrorMessage(err, "Failed to update agent status");
     console.error(`[SYNC ERROR] ${errorMsg}`);
     throw new Error(errorMsg);
   }
@@ -101,6 +103,29 @@ export const getMe = async (): Promise<AuthResponse> => {
     const res = await http.get("/auth/me", getAuthHeaders());
     return res.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.msg || "Session expired");
+    throw new Error(getErrorMessage(err, "Session expired. Please log in again."));
+  }
+};
+
+// 6. Get a single CSR's profile (admin only)
+export const getAgent = async (csrId: string): Promise<User> => {
+  try {
+    const res = await http.get(`/auth/agent/${csrId}`, getAuthHeaders());
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to load agent"));
+  }
+};
+
+// 7. Update a CSR's personal / allotted number (admin only)
+export const updateAgentPhones = async (
+  csrId: string,
+  data: { personalPhone?: string; officialPhone?: string }
+): Promise<User> => {
+  try {
+    const res = await http.patch(`/auth/agent/${csrId}/phones`, data, getAuthHeaders());
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to update number"));
   }
 };

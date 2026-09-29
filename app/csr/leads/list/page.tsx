@@ -43,7 +43,7 @@ export default function LeadsListPage() {
             setAllLeads(Array.isArray(res) ? res : []);
         } catch (err: any) {
             console.error("Failed to fetch leads:", err);
-            setError(err.response?.data?.message || err.message || "Failed to load leads");
+            setError(err.message || "Failed to load leads");
         } finally {
             setLoading(false);
         }

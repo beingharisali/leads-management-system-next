@@ -35,7 +35,7 @@ export default function LoginPage() {
             }, 800);
 
         } catch (err: any) {
-            toast.error(err.response?.data?.msg || "Invalid credentials");
+            toast.error(err.message || "Login failed. Please try again.");
         } finally {
             setLoading(false);
         }

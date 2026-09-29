@@ -35,7 +35,7 @@ export default function AddCSRPage() {
             setPassword("");
             setRole("csr");
         } catch (err: any) {
-            setError(err.response?.data?.msg || err.message || "Failed to create user.");
+            setError(err.message || "Failed to create user.");
         }
     };
 

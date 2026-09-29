@@ -24,7 +24,7 @@ export default function CreateCSR() {
         password: "",
       });
     } catch (err: any) {
-      setMsg(err.response?.data?.msg || "Error creating CSR");
+      setMsg(err.message || "Error creating CSR");
     }
   };
   function changeHandler(e: any) {

@@ -52,15 +52,20 @@ export default function UploadLeadsPage() {
             toast.success("Leads imported!");
 
             // Refresh Leads list
+            // A failed refresh must not be reported as a failed upload
             if (role === "csr") {
-                const refreshedLeads = await getLeadsByRole(role, userId);
-                setLeads((refreshedLeads as Lead[]) ?? []);
+                try {
+                    const refreshedLeads = await getLeadsByRole(role, userId);
+                    setLeads((refreshedLeads as Lead[]) ?? []);
+                } catch (refreshErr: any) {
+                    toast.error(refreshErr.message || "Leads were imported, but the list could not be refreshed");
+                }
             }
         } catch (err: any) {
             console.error(err);
             setMessageType("error");
-            setMessage(err?.response?.data?.message || err?.message || "❌ Failed to upload Excel");
-            toast.error("Upload failed");
+            setMessage(`❌ ${err?.message || "Failed to upload Excel"}`);
+            toast.error(err?.message || "Upload failed");
         } finally {
             setLoading(false);
             setFile(null);

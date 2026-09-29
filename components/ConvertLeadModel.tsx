@@ -40,7 +40,7 @@ export default function ConvertLeadModal({
       alert(res.data.message || "Lead converted successfully ✅");
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.msg || "Error converting lead");
+      setError(err.message || "Error converting lead");
     } finally {
       setLoading(false);
     }

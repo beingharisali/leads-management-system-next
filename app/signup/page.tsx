@@ -30,7 +30,7 @@ export default function SignupPage() {
 
             setTimeout(() => router.push("/login"), 2000);
         } catch (err: any) {
-            toast.error(err.response?.data?.msg || "Signup failed. Try again.");
+            toast.error(err.message || "Signup failed. Try again.");
         } finally {
             setLoading(false);
         }

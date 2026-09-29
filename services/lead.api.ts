@@ -1,4 +1,4 @@
-import http from "./http";
+import http, { getErrorMessage } from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
 export type LeadStatus =
@@ -106,7 +106,7 @@ export const getLeads = async (params: {
     return [];
   } catch (err: any) {
     console.error("Fetch Leads Error:", err.message);
-    return [];
+    throw new Error(getErrorMessage(err, "Failed to load leads"));
   }
 };
 
@@ -130,7 +130,7 @@ export const getAllLeadsPaginated = async (
     };
   } catch (err: any) {
     console.error("Fetch All Leads Error:", err.message);
-    return EMPTY_PAGE;
+    throw new Error(getErrorMessage(err, "Failed to load leads"));
   }
 };
 
@@ -161,7 +161,7 @@ export const getLeadsByDateFiltered = async (
     };
   } catch (err: any) {
     console.error("Fetch Leads By Date Error:", err.message);
-    return EMPTY_PAGE;
+    throw new Error(getErrorMessage(err, "Failed to load leads"));
   }
 };
 
@@ -184,7 +184,7 @@ export const getLeadsByRole = async (role: string, filter?: string, userId?: str
     return [];
   } catch (err: any) {
     console.error("Fetch Role Leads Error:", err.message);
-    return [];
+    throw new Error(getErrorMessage(err, "Failed to load leads"));
   }
 };
 
@@ -197,7 +197,7 @@ export const createLead = async (data: LeadPayload): Promise<Lead> => {
     const res = await http.post<ApiResponse<Lead>>("/lead/create", payload);
     return res.data.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Failed to create lead");
+    throw new Error(getErrorMessage(err, "Failed to create lead"));
   }
 };
 
@@ -206,7 +206,7 @@ export const updateLead = async (id: string, data: Partial<LeadPayload>): Promis
     const res = await http.patch<ApiResponse<Lead>>(`/lead/${id}`, data);
     return res.data.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Failed to update lead");
+    throw new Error(getErrorMessage(err, "Failed to update lead"));
   }
 };
 
@@ -214,7 +214,7 @@ export const deleteLead = async (id: string): Promise<void> => {
   try {
     await http.delete(`/lead/${id}`);
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Failed to delete lead");
+    throw new Error(getErrorMessage(err, "Failed to delete lead"));
   }
 };
 
@@ -227,7 +227,7 @@ export const deleteAllLeads = async (): Promise<void> => {
   try {
     await http.delete("/lead/admin/delete-all");
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Failed to delete all leads");
+    throw new Error(getErrorMessage(err, "Failed to delete all leads"));
   }
 };
 
@@ -236,7 +236,7 @@ export const convertLeadToSale = async (id: string, saleAmount: number): Promise
     const res = await http.post<ApiResponse<Lead>>(`/lead/convert-to-sale/${id}`, { amount: saleAmount });
     return res.data.data;
   } catch (err: any) {
-    throw new Error(err.response?.data?.message || "Conversion failed");
+    throw new Error(getErrorMessage(err, "Conversion failed"));
   }
 };
 
@@ -261,6 +261,6 @@ export const bulkInsertLeads = async (file: File, userId: string): Promise<any> 
     return res.data;
   } catch (err: any) {
     console.error("API Bulk Upload Error Detail:", err.response?.data);
-    throw new Error(err.response?.data?.message || "Excel upload failed on server");
+    throw new Error(getErrorMessage(err, "Excel upload failed on server"));
   }
 };

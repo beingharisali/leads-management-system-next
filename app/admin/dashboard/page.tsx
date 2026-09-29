@@ -40,6 +40,8 @@ interface CSRFormData {
     name: string;
     email: string;
     password: string;
+    personalPhone: string;
+    officialPhone: string;
 }
 
 export default function AdminDashboardPage() {
@@ -78,7 +80,7 @@ export default function AdminDashboardPage() {
     });
 
     const [csrForm, setCsrForm] = useState<CSRFormData>({
-        name: "", email: "", password: ""
+        name: "", email: "", password: "", personalPhone: "", officialPhone: ""
     });
 
     const [isStatusChanging, setIsStatusChanging] = useState(false);
@@ -167,7 +169,7 @@ export default function AdminDashboardPage() {
             toggleModal('lead', false);
             setLeadForm({ name: "", phone: "", city: "", course: "", source: "", remarks: "", assignedTo: "" });
             fetchDashboardData(true);
-        } catch (err: any) { toast.error(err.message || "Failed", { id: toastId }); }
+        } catch (err: any) { toast.error(err.message || "Failed to create lead", { id: toastId }); }
     };
 
     const handleCSRSubmit = async (e: FormEvent) => {
@@ -177,9 +179,9 @@ export default function AdminDashboardPage() {
             await createCSR(csrForm);
             toast.success("Agent Registered!", { id: toastId });
             toggleModal('csr', false);
-            setCsrForm({ name: "", email: "", password: "" });
+            setCsrForm({ name: "", email: "", password: "", personalPhone: "", officialPhone: "" });
             fetchDashboardData(true);
-        } catch (err: any) { toast.error(err.message || "Failed", { id: toastId }); }
+        } catch (err: any) { toast.error(err.message || "Failed to register agent", { id: toastId }); }
     };
 
     const confirmExcelUpload = async () => {
@@ -191,7 +193,7 @@ export default function AdminDashboardPage() {
             toast.success("Import Successful", { id: toastId });
             toggleModal('excel', false);
             fetchDashboardData(true);
-        } catch (err: any) { toast.error(err.message, { id: toastId }); } finally { setUploading(false); }
+        } catch (err: any) { toast.error(err.message || "Failed to import leads", { id: toastId }); } finally { setUploading(false); }
     };
 
     // FIXED: Delete All Leads Function
@@ -496,6 +498,8 @@ export default function AdminDashboardPage() {
                                 <input placeholder="Full Name" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.name} onChange={e => setCsrForm({ ...csrForm, name: e.target.value })} />
                                 <input type="email" placeholder="Email Address" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.email} onChange={e => setCsrForm({ ...csrForm, email: e.target.value })} />
                                 <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.password} onChange={e => setCsrForm({ ...csrForm, password: e.target.value })} />
+                                <input type="tel" placeholder="Personal Number (e.g. 03001234567)" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.personalPhone} onChange={e => setCsrForm({ ...csrForm, personalPhone: e.target.value })} />
+                                <input type="tel" placeholder="Official / Allotted Number" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.officialPhone} onChange={e => setCsrForm({ ...csrForm, officialPhone: e.target.value })} />
                                 <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black">REGISTER AGENT</button>
                             </form>
                         </motion.div>

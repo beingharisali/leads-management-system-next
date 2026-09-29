@@ -135,7 +135,7 @@ export default function CSRLeadsPanel({
             toast.success("Lead deleted");
             onDeleteLead();
         } catch (err: any) {
-            toast.error("Error deleting lead");
+            toast.error(err.message || "Error deleting lead");
         } finally {
             setProcessingId(null);
         }

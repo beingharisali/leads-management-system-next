@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FiClock, FiLogIn, FiSun, FiChevronLeft, FiChevronRight, FiCalendar } from "react-icons/fi";
+import { FiClock, FiLogIn, FiSun, FiChevronLeft, FiChevronRight, FiChevronDown, FiCalendar } from "react-icons/fi";
 import { getCsrActivity, CsrActivity } from "@/services/activity.api";
 import { formatDuration, liveTodaySeconds } from "@/utils/activityTime";
 
@@ -46,6 +46,8 @@ export default function CsrActivityCard({ csrId }: { csrId: string }) {
     const [now, setNow] = useState(() => Date.now());
     const currentMonth = monthKey(new Date());
     const [month, setMonth] = useState(currentMonth);
+    // Only today's figures by default; the month stats + calendar are opt-in
+    const [showMonth, setShowMonth] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -113,7 +115,8 @@ export default function CsrActivityCard({ csrId }: { csrId: string }) {
                     </div>
                 </div>
 
-                <div className="lg:ml-auto flex flex-wrap gap-6 text-xs lg:border-l lg:border-slate-100 lg:pl-6">
+                <div className="lg:ml-auto flex flex-wrap items-center gap-6 text-xs">
+                    {showMonth && (<div className="flex flex-wrap gap-6 lg:border-l lg:border-slate-100 lg:pl-6">
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Month total</p>
                         <p className="font-bold text-slate-700">{formatShort(monthTotal)}</p>
@@ -126,10 +129,23 @@ export default function CsrActivityCard({ csrId }: { csrId: string }) {
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Avg / active day</p>
                         <p className="font-bold text-slate-700">{formatShort(monthAverage)}</p>
                     </div>
+                    </div>)}
+                    <button
+                        onClick={() => {
+                            setShowMonth(v => !v);
+                            setMonth(currentMonth);
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${showMonth ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"}`}
+                    >
+                        <FiCalendar size={13} />
+                        {showMonth ? "Hide monthly activity" : "View monthly activity"}
+                        <FiChevronDown size={13} className={`transition-transform ${showMonth ? "rotate-180" : ""}`} />
+                    </button>
                 </div>
             </div>
 
             {/* Whole-month calendar */}
+            {showMonth && (
             <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-3">
                     <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -177,6 +193,7 @@ export default function CsrActivityCard({ csrId }: { csrId: string }) {
                     })}
                 </div>
             </div>
+            )}
         </div>
     );
 }

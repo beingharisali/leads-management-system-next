@@ -30,7 +30,7 @@ export default function SalesPage() {
             setSales(res.data || []);
         } catch (err: any) {
             console.error(err);
-            setError(err?.response?.data?.msg || err?.message || "Failed to fetch sales");
+            setError(err?.message || "Failed to fetch sales");
         } finally {
             setLoading(false);
         }

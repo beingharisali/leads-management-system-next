@@ -46,7 +46,7 @@ export default function TeamAnalytics() {
             setStats(res.data.data || []);
         } catch (err: any) {
             console.error(err);
-            setError(err?.response?.data?.message || "Failed to fetch team analytics");
+            setError(err?.message || "Failed to fetch team analytics");
         } finally {
             setLoading(false);
         }
