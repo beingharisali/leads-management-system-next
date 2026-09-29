@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
     getLeadsByRole,
@@ -19,11 +19,15 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass, LEAD_STATUS_OPTIONS, isUrgentStatus, pinUrgentFirst, statusBadgeClass } from "@/utils/leadStatus";
+import FollowUpBell from "@/components/FollowUpBell";
+import UrgentLeadsBanner from "@/components/UrgentLeadsBanner";
+import { useUrgentLeadsPolling, useOnUrgentChange } from "@/hooks/useUrgentLeads";
 import {
-    FiArrowLeft, FiCheckCircle, FiPhone, FiSearch,
-    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiEye,
-    FiChevronLeft, FiChevronRight, FiArchive
+    FiArrowLeft, FiEye, FiPhone, FiSearch,
+    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiClock, FiUserCheck, FiArchive,
+    FiChevronLeft, FiChevronRight, // New Icons for Pagination
+    FiAlertTriangle
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -40,20 +44,20 @@ interface Lead {
     followUpDate?: string;
     createdAt: string;
     statusUpdatedAt?: string;
+
     saleAmount?: number;
 }
 
-
-// Admin-only view of a single agent's dashboard: same live pipeline the
-// CSR sees on /csr/dashboard, but reachable straight from the admin
-// console (click an agent -> land here) with no separate CSR login.
+// Admin-only view of a single agent's portal: exactly what the CSR sees on
+// /csr/dashboard (same open-lead pipeline, urgent pinning, follow-up
+// reminders, cards and filters), plus the admin extras - allotted numbers,
+// portal activity, and importing/creating leads straight for this agent.
 export default function AdminAgentDashboard() {
     const router = useRouter();
     const params = useParams<{ id: string }>();
     const searchParams = useSearchParams();
     const csrId = params.id;
     const agentName = searchParams.get("name") || "Agent";
-
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [leads, setLeads] = useState<Lead[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -80,19 +84,52 @@ export default function AdminAgentDashboard() {
         name: "", phone: "", city: "", source: "", course: "", remarks: ""
     });
 
-    const statusOptions = ["new", "not pick", "interested", "paid", "not interested", "busy", "wrong number",];
+    const statusOptions = LEAD_STATUS_OPTIONS;
+    // Only open statuses can appear on this dashboard - closed leads live
+    // on the Closed Leads page - so the column filter only offers these.
+    const openStatusOptions = statusOptions.filter(s => !isClosedStatus(s));
 
     const fetchData = useCallback(async (isSilent = false) => {
         if (!csrId) return;
         try {
             if (!isSilent) setLoading(true);
             const leadsRes = await getLeadsByRole("csr", undefined, csrId);
-            setLeads(Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : []);
+            // Same as the CSR's own dashboard: closed leads live on the
+            // agent's Closed Leads page, not here.
+            const allLeads = Array.isArray(leadsRes) ? (leadsRes as unknown as Lead[]) : [];
+            setLeads(allLeads.filter(l => !isClosedStatus(l.status)));
         } catch (err: any) { toast.error(err.message || "Failed to load agent's dashboard data"); }
         finally { setLoading(false); }
     }, [csrId]);
 
+    // Poll this agent's urgent leads; when the set changes (e.g. the CSR
+    // marked one Urgent) re-fetch so the table re-pins.
+    const urgentState = useUrgentLeadsPolling(csrId);
+    useOnUrgentChange(urgentState.signature, urgentState.loaded, () => fetchData(true));
+
+    // Follow-up reminders: Interested leads whose CSR-picked follow-up date
+    // is today (or already passed without being actioned). Not Pick/Busy
+    // leads roll to the next day automatically, so they never show here.
+    const dueFollowUps = useMemo(() => {
+        const todayKey = localDateKey(new Date());
+        return leads
+            .filter(l =>
+                l.status.toLowerCase() === "interested" &&
+                l.followUpDate &&
+                localDateKey(l.followUpDate) <= todayKey
+            )
+            .map(l => ({ ...l, isOverdue: localDateKey(l.followUpDate!) < todayKey }))
+            .sort((a, b) => new Date(a.followUpDate!).getTime() - new Date(b.followUpDate!).getTime());
+    }, [leads]);
+
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Silently re-fetch every 5 minutes so follow-ups that become due while
+    // the dashboard is left open (e.g. past midnight) still get announced.
+    useEffect(() => {
+        const interval = setInterval(() => fetchData(true), 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [fetchData]);
 
     // Reset to page 1 when filters change
     useEffect(() => {
@@ -127,16 +164,22 @@ export default function AdminAgentDashboard() {
     };
 
     // --- Core Filtering Logic ---
-    // Same due-date semantics as the CSR's own dashboard: filters key off
-    // `followUpDate`, Paid/Not Interested close a lead out of these views,
-    // and every window includes anything overdue.
+    // Date filters key off `followUpDate` (when the lead is next due for
+    // contact), not `createdAt`. The server keeps that date up to date:
+    // closed statuses clear it (and those leads aren't loaded here at
+    // all), any other status change rolls it to tomorrow (Not Pick/Busy
+    // always do), and a date the CSR picked for an Interested lead is
+    // respected as-is. "today" and
+    // every other window include anything overdue so a lead never
+    // silently disappears if a CSR misses a day.
     const filteredLeads = useMemo(() => {
         const now = new Date();
 
         const startOfDay = new Date(now);
         startOfDay.setHours(0, 0, 0, 0);
 
-        return leads.filter(l => {
+        // Urgent leads always sit at the top, whatever else is filtered
+        return pinUrgentFirst(leads.filter(l => {
             const dueDate = l.followUpDate ? new Date(l.followUpDate) : null;
 
             const matchesSearch =
@@ -213,7 +256,7 @@ export default function AdminAgentDashboard() {
                 matchesSource &&
                 matchesDate
             );
-        });
+        }));
     }, [
         leads,
         searchTerm,
@@ -225,7 +268,6 @@ export default function AdminAgentDashboard() {
         selectedSources,
         selectedStatuses
     ]);
-
     // --- PAGINATION CALCULATION ---
     const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
     const paginatedLeads = useMemo(() => {
@@ -233,19 +275,18 @@ export default function AdminAgentDashboard() {
         return filteredLeads.slice(startIndex, startIndex + leadsPerPage);
     }, [filteredLeads, currentPage]);
 
+    const urgentLeads = useMemo(() => leads.filter(l => isUrgentStatus(l.status)), [leads]);
+
     const metrics = useMemo(() => {
         const getCount = (status: string) => filteredLeads.filter(l => l.status.toLowerCase() === status).length;
-        const sales = filteredLeads.filter(l => ["paid", "sale"].includes(l.status.toLowerCase()));
-        const totalRevenue = sales.reduce((sum, l) => sum + (l.saleAmount || 0), 0);
 
         return {
             total: filteredLeads.length,
-            revenue: totalRevenue,
-            paid: sales.length,
+            urgent: getCount("urgent"),
             newLeads: getCount("new"),
             notPick: getCount("not pick"),
-            followUp: getCount("follow-up"),
-            notinterested: getCount("not interested"),
+            interested: getCount("interested"),
+            busy: getCount("busy"),
         };
     }, [filteredLeads]);
 
@@ -259,13 +300,15 @@ export default function AdminAgentDashboard() {
             const normalizedStatus = data.status?.toLowerCase().trim();
             let updatedLeadData;
 
+
             if (normalizedStatus && normalizedStatus !== "paid" && normalizedStatus !== "sale") {
                 data.saleAmount = null as any;
             }
 
             // Don't send followUpDate here on a plain status change - the
-            // server auto-schedules it. Only the dedicated date picker
-            // (below) sends an explicit followUpDate to pin a specific day.
+            // server auto-schedules it (clears it on a closed status, rolls
+            // to tomorrow otherwise). Only the dedicated date picker (below,
+            // Interested only) sends an explicit followUpDate.
 
             if (normalizedStatus === "paid" || normalizedStatus === "sale") {
                 const amount = prompt("Enter Sale Amount:");
@@ -276,6 +319,14 @@ export default function AdminAgentDashboard() {
                 updatedLeadData = await convertLeadToSale(id, Number(amount));
             } else {
                 updatedLeadData = await updateLead(id, data);
+            }
+
+            // A closed status takes the lead off this dashboard right away.
+            if (isClosedStatus(normalizedStatus)) {
+                setLeads(prev => prev.filter(l => l._id !== id));
+                toast.success(`Lead closed as ${normalizedStatus!.toUpperCase()}`, { id: tid });
+                fetchData(true);
+                return;
             }
 
             setLeads(prev => prev.map(l =>
@@ -292,9 +343,9 @@ export default function AdminAgentDashboard() {
             toast.success("Success", { id: tid });
             fetchData(true);
 
-        } catch (err) {
+        } catch (err: any) {
             console.error("Update error detailed logs:", err);
-            toast.error((err as any)?.message || "Failed to update lead", { id: tid });
+            toast.error(err?.message || "Failed to update lead", { id: tid });
         }
     };
 
@@ -341,13 +392,6 @@ export default function AdminAgentDashboard() {
                         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                             <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" className="hidden" />
 
-                            <Link
-                                href={`/admin/agent/${csrId}/closed?name=${encodeURIComponent(agentName)}`}
-                                className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"
-                            >
-                                <FiArchive /> Closed Leads
-                            </Link>
-
                             <button
                                 onClick={() => fileInputRef.current?.click()}
                                 className="px-5 py-3 bg-emerald-500 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all"
@@ -364,6 +408,11 @@ export default function AdminAgentDashboard() {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
+                            <FollowUpBell
+                                dueFollowUps={dueFollowUps}
+                                onSelect={l => { setSearchTerm(l.phone); setDateFilter("all"); }}
+                            />
+                            <Link href={`/admin/agent/${csrId}/closed?name=${encodeURIComponent(agentName)}`} className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiArchive /> Closed Leads</Link>
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                         </div>
                     </div>
@@ -385,15 +434,22 @@ export default function AdminAgentDashboard() {
                             <input type="date" className="bg-transparent text-xs font-bold text-slate-600" onChange={(e) => { setCustomDates({ ...customDates, end: e.target.value }); setDateFilter('custom'); }} />
                         </div>
                     </div>
+
+                    <UrgentLeadsBanner
+                        agentName={agentName}
+                        leads={urgentLeads}
+                        onSelect={l => { setSearchTerm(l.phone); setDateFilter("all"); }}
+                    />
                 </div>
 
                 {/* Summary Metrics Grid */}
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <SummaryCard title="Urgent" value={metrics.urgent.toString()} percentage={percentOfTotal(metrics.urgent)} icon={<FiAlertTriangle />} color="rose" />
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} percentage={percentOfTotal(metrics.newLeads)} icon={<FiPlus />} color="blue" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} percentage={percentOfTotal(metrics.notPick)} icon={<FiPhone />} color="orange" />
-                    <SummaryCard title="Not Interested" value={metrics.notinterested.toString()} percentage={percentOfTotal(metrics.notinterested)} icon={<FiSlash />} color="orange" />
-                    <SummaryCard title="Paid Sales" value={metrics.paid.toString()} percentage={percentOfTotal(metrics.paid)} icon={<FiCheckCircle />} color="green" />
-                    <SummaryCard title="Total Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
+                    <SummaryCard title="Interested" value={metrics.interested.toString()} percentage={percentOfTotal(metrics.interested)} icon={<FiUserCheck />} color="green" />
+                    <SummaryCard title="Busy" value={metrics.busy.toString()} percentage={percentOfTotal(metrics.busy)} icon={<FiClock />} color="indigo" />
+                    <SummaryCard title="Open Leads Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
 
                 {/* Main Table */}
@@ -422,7 +478,7 @@ export default function AdminAgentDashboard() {
                                     </th>
                                     <th className="px-6 py-5">
                                         <span className="inline-flex items-center">Status
-                                            <ColumnFilterDropdown label="Status" options={statusOptions.map(s => ({ value: s, label: s.toUpperCase() }))} selected={selectedStatuses} onChange={setSelectedStatuses} />
+                                            <ColumnFilterDropdown label="Status" options={openStatusOptions.map(s => ({ value: s, label: s.toUpperCase() }))} selected={selectedStatuses} onChange={setSelectedStatuses} />
                                         </span>
                                     </th>
                                     <th className="px-6 py-5">Remarks</th>
@@ -432,7 +488,7 @@ export default function AdminAgentDashboard() {
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                                 {paginatedLeads.length > 0 ? paginatedLeads.map((lead) => (
-                                    <tr key={lead._id} className="hover:bg-slate-50/50 transition-colors">
+                                    <tr key={lead._id} className={`transition-colors ${isUrgentStatus(lead.status) ? "bg-rose-50/70 hover:bg-rose-50 shadow-[inset_4px_0_0_#e11d48]" : "hover:bg-slate-50/50"}`}>
                                         <td className="px-6 py-4 text-xs font-medium text-slate-500">
                                             <div>{new Date(lead.createdAt).toLocaleDateString('en-GB')}</div>
                                             {(() => {
@@ -444,7 +500,14 @@ export default function AdminAgentDashboard() {
                                                 );
                                             })()}
                                         </td>
-                                        <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
+                                        <td className="px-6 py-4 font-bold text-slate-800">
+                                            {lead.name}
+                                            {isUrgentStatus(lead.status) && (
+                                                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider align-middle">
+                                                    <FiAlertTriangle size={10} /> Urgent
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
                                         <td className="px-6 py-4 text-sm font-semibold text-slate-600">
                                             {/* Blank is rejected (course is required) - it just snaps back */}
@@ -471,10 +534,7 @@ export default function AdminAgentDashboard() {
                                             <select
                                                 value={lead.status.toLowerCase()}
                                                 onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
-                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200
-        ${lead.status.toLowerCase() === 'paid' ? 'bg-green-100 text-green-700' :
-                                                        lead.status.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-700' :
-                                                            'bg-slate-100 text-slate-600'}`}
+                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 ${statusBadgeClass(lead.status)}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
                                             </select>
@@ -493,18 +553,29 @@ export default function AdminAgentDashboard() {
                                                 <input
                                                     key={lead.followUpDate || "none"}
                                                     type="date"
-                                                    title="Pick the day the agent should follow up with this lead"
+                                                    title="Pick the day the agent should follow up with this lead - they'll get a reminder on that date"
+                                                    min={localDateKey(new Date())}
                                                     defaultValue={lead.followUpDate ? localDateKey(lead.followUpDate) : ""}
                                                     onChange={(e) =>
                                                         e.target.value &&
                                                         handleUpdate(lead._id, {
+                                                            // Local midnight, so the reminder fires on the picked day
                                                             followUpDate: new Date(`${e.target.value}T00:00:00`).toISOString()
                                                         })
                                                     }
                                                     className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500"
                                                 />
                                             ) : (
-                                                <span className="text-slate-400 text-xs">{isClosedStatus(lead.status) ? "Closed" : "-"}</span>
+                                                <span
+                                                    className="text-slate-400 text-xs"
+                                                    title={isUrgentStatus(lead.status)
+                                                        ? "Urgent leads are due immediately"
+                                                        : ["not pick", "busy"].includes(lead.status.toLowerCase())
+                                                            ? "Automatically moved to the next day"
+                                                            : "Set status to Interested to schedule a follow-up"}
+                                                >
+                                                    -
+                                                </span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? `${lead.saleAmount}` : "-"}</td>
@@ -537,6 +608,7 @@ export default function AdminAgentDashboard() {
                                 <div className="flex items-center gap-1">
                                     {[...Array(totalPages)].map((_, i) => {
                                         const pageNum = i + 1;
+                                        // Display logic: show first, last, and pages around current
                                         if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
                                             return (
                                                 <button
@@ -566,7 +638,7 @@ export default function AdminAgentDashboard() {
                     )}
                 </div>
 
-                {/* Create Lead Modal */}
+                {/* Create Modal (Remains same as your original) */}
                 <AnimatePresence>
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -574,7 +646,7 @@ export default function AdminAgentDashboard() {
                                 <div className="bg-slate-900 p-6 text-white flex justify-between items-center">
                                     <div>
                                         <h2 className="text-xl font-bold">Create New Lead</h2>
-                                        <p className="text-slate-400 text-xs">Will be assigned to {agentName}</p>
+                                        <p className="text-slate-400 text-xs">Fill in the lead details manually</p>
                                     </div>
                                     <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><FiX size={20} /></button>
                                 </div>

@@ -264,3 +264,24 @@ export const bulkInsertLeads = async (file: File, userId: string): Promise<any> 
     throw new Error(getErrorMessage(err, "Excel upload failed on server"));
   }
 };
+
+// Urgent leads only - small payload, safe to poll. CSRs get their own;
+// an admin passes csrId for one agent (or omits it for everyone's).
+export interface UrgentLead {
+  _id: string;
+  name: string;
+  phone: string;
+  course?: string;
+  city?: string;
+  remarks?: string;
+  statusUpdatedAt?: string;
+}
+
+export const getUrgentLeads = async (csrId?: string): Promise<UrgentLead[]> => {
+  try {
+    const res = await http.get("/lead/urgent", { params: { csrId: csrId || undefined } });
+    return res.data?.data || [];
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to load urgent leads"));
+  }
+};

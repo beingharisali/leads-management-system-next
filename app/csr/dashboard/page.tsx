@@ -19,12 +19,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import MyActivityTimer from "@/components/MyActivityTimer";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass, LEAD_STATUS_OPTIONS, isUrgentStatus, pinUrgentFirst, statusBadgeClass } from "@/utils/leadStatus";
+import FollowUpBell from "@/components/FollowUpBell";
+import UrgentLeadsBanner from "@/components/UrgentLeadsBanner";
+import { useUrgentLeads, useOnUrgentChange } from "@/hooks/useUrgentLeads";
 import {
-    FiLogOut, FiCheckCircle, FiPhone, FiDollarSign, FiSearch,
-    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiSlash, FiClock, FiUserCheck, FiArchive,
+    FiLogOut, FiPhone, FiSearch,
+    FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiClock, FiUserCheck, FiArchive,
     FiChevronLeft, FiChevronRight, // New Icons for Pagination
-    FiBell
+    FiAlertTriangle
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -53,7 +56,6 @@ export default function CSRDashboard() {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const notifiedLeadsRef = useRef<Record<string, boolean>>({});
-    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
     // --- Pagination States ---
     const [currentPage, setCurrentPage] = useState(1);
@@ -75,7 +77,7 @@ export default function CSRDashboard() {
         name: "", phone: "", city: "", source: "", course: "", remarks: ""
     });
 
-    const statusOptions = ["new", "not pick", "interested", "paid", "not interested", "busy", "wrong number",];
+    const statusOptions = LEAD_STATUS_OPTIONS;
     // Only open statuses can appear on this dashboard - closed leads live
     // on the Closed Leads page - so the column filter only offers these.
     const openStatusOptions = statusOptions.filter(s => !isClosedStatus(s));
@@ -95,6 +97,11 @@ export default function CSRDashboard() {
         } catch (err: any) { toast.error(err.message || "Failed to load dashboard data"); }
         finally { setLoading(false); }
     }, [router]);
+
+    // The CSR layout polls for urgent leads; when that set changes (e.g. the
+    // admin just marked a lead Urgent) re-fetch so the table re-pins.
+    const urgentState = useUrgentLeads();
+    useOnUrgentChange(urgentState.signature, urgentState.loaded, () => fetchData(true));
 
     // Follow-up reminders: Interested leads whose CSR-picked follow-up date
     // is today (or already passed without being actioned). Not Pick/Busy
@@ -189,7 +196,8 @@ export default function CSRDashboard() {
         const startOfDay = new Date(now);
         startOfDay.setHours(0, 0, 0, 0);
 
-        return leads.filter(l => {
+        // Urgent leads always sit at the top, whatever else is filtered
+        return pinUrgentFirst(leads.filter(l => {
             const dueDate = l.followUpDate ? new Date(l.followUpDate) : null;
 
             const matchesSearch =
@@ -266,7 +274,7 @@ export default function CSRDashboard() {
                 matchesSource &&
                 matchesDate
             );
-        });
+        }));
     }, [
         leads,
         searchTerm,
@@ -285,11 +293,14 @@ export default function CSRDashboard() {
         return filteredLeads.slice(startIndex, startIndex + leadsPerPage);
     }, [filteredLeads, currentPage]);
 
+    const urgentLeads = useMemo(() => leads.filter(l => isUrgentStatus(l.status)), [leads]);
+
     const metrics = useMemo(() => {
         const getCount = (status: string) => filteredLeads.filter(l => l.status.toLowerCase() === status).length;
 
         return {
             total: filteredLeads.length,
+            urgent: getCount("urgent"),
             newLeads: getCount("new"),
             notPick: getCount("not pick"),
             interested: getCount("interested"),
@@ -406,52 +417,10 @@ export default function CSRDashboard() {
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
-                            <div className="relative">
-                                <button
-                                    onClick={() => setIsNotificationsOpen(o => !o)}
-                                    title="Follow-up reminders"
-                                    className="relative p-3 bg-white text-slate-700 rounded-2xl shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"
-                                >
-                                    <FiBell size={20} />
-                                    {dueFollowUps.length > 0 && (
-                                        <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center bg-rose-500 text-white text-[10px] font-black rounded-full">
-                                            {dueFollowUps.length}
-                                        </span>
-                                    )}
-                                </button>
-
-                                {isNotificationsOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)} />
-                                        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden">
-                                            <div className="px-4 py-3 border-b border-slate-100">
-                                                <p className="text-sm font-black text-slate-800">Follow-ups due</p>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Interested leads scheduled for today</p>
-                                            </div>
-                                            <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
-                                                {dueFollowUps.length === 0 ? (
-                                                    <p className="px-4 py-8 text-center text-xs text-slate-400">No follow-ups due today.</p>
-                                                ) : dueFollowUps.map(l => (
-                                                    <button
-                                                        key={l._id}
-                                                        onClick={() => { setSearchTerm(l.phone); setDateFilter("all"); setIsNotificationsOpen(false); }}
-                                                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
-                                                    >
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <span className="font-bold text-sm text-slate-800 truncate">{l.name}</span>
-                                                            <span className={`shrink-0 text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${l.isOverdue ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-700'}`}>
-                                                                {l.isOverdue ? `Overdue · ${new Date(l.followUpDate!).toLocaleDateString('en-GB')}` : 'Today'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-xs text-blue-600 font-semibold">{l.phone}</div>
-                                                        {l.course && <div className="text-[10px] text-slate-400 truncate">{l.course}</div>}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
+                            <FollowUpBell
+                                dueFollowUps={dueFollowUps}
+                                onSelect={l => { setSearchTerm(l.phone); setDateFilter("all"); }}
+                            />
                             <Link href="/csr/leads/closed" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiArchive /> Closed Leads</Link>
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                             <button onClick={logout} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm border border-slate-100"><FiLogOut size={20} /></button>
@@ -471,10 +440,16 @@ export default function CSRDashboard() {
                             <input type="date" className="bg-transparent text-xs font-bold text-slate-600" onChange={(e) => { setCustomDates({ ...customDates, end: e.target.value }); setDateFilter('custom'); }} />
                         </div>
                     </div>
+
+                    <UrgentLeadsBanner
+                        leads={urgentLeads}
+                        onSelect={l => { setSearchTerm(l.phone); setDateFilter("all"); }}
+                    />
                 </div>
 
                 {/* Summary Metrics Grid */}
                 <div className="max-w-[1600px] mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <SummaryCard title="Urgent" value={metrics.urgent.toString()} percentage={percentOfTotal(metrics.urgent)} icon={<FiAlertTriangle />} color="rose" />
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} percentage={percentOfTotal(metrics.newLeads)} icon={<FiPlus />} color="blue" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} percentage={percentOfTotal(metrics.notPick)} icon={<FiPhone />} color="orange" />
                     <SummaryCard title="Interested" value={metrics.interested.toString()} percentage={percentOfTotal(metrics.interested)} icon={<FiUserCheck />} color="green" />
@@ -518,7 +493,7 @@ export default function CSRDashboard() {
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                                 {paginatedLeads.length > 0 ? paginatedLeads.map((lead) => (
-                                    <tr key={lead._id} className="hover:bg-slate-50/50 transition-colors">
+                                    <tr key={lead._id} className={`transition-colors ${isUrgentStatus(lead.status) ? "bg-rose-50/70 hover:bg-rose-50 shadow-[inset_4px_0_0_#e11d48]" : "hover:bg-slate-50/50"}`}>
                                         <td className="px-6 py-4 text-xs font-medium text-slate-500">
                                             <div>{new Date(lead.createdAt).toLocaleDateString('en-GB')}</div>
                                             {(() => {
@@ -530,7 +505,14 @@ export default function CSRDashboard() {
                                                 );
                                             })()}
                                         </td>
-                                        <td className="px-6 py-4 font-bold text-slate-800">{lead.name}</td>
+                                        <td className="px-6 py-4 font-bold text-slate-800">
+                                            {lead.name}
+                                            {isUrgentStatus(lead.status) && (
+                                                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider align-middle">
+                                                    <FiAlertTriangle size={10} /> Urgent
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
                                         <td className="px-6 py-4 text-sm font-semibold text-slate-600">
                                             {/* Blank is rejected (course is required) - it just snaps back */}
@@ -557,10 +539,7 @@ export default function CSRDashboard() {
                                             <select
                                                 value={lead.status.toLowerCase()}
                                                 onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
-                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 
-        ${lead.status.toLowerCase() === 'paid' ? 'bg-green-100 text-green-700' :
-                                                        lead.status.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-700' :
-                                                            'bg-slate-100 text-slate-600'}`}
+                                                className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 ${statusBadgeClass(lead.status)}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
                                             </select>
@@ -594,9 +573,11 @@ export default function CSRDashboard() {
                                             ) : (
                                                 <span
                                                     className="text-slate-400 text-xs"
-                                                    title={["not pick", "busy"].includes(lead.status.toLowerCase())
-                                                        ? "Automatically moved to the next day"
-                                                        : "Set status to Interested to schedule a follow-up"}
+                                                    title={isUrgentStatus(lead.status)
+                                                        ? "Urgent leads are due immediately"
+                                                        : ["not pick", "busy"].includes(lead.status.toLowerCase())
+                                                            ? "Automatically moved to the next day"
+                                                            : "Set status to Interested to schedule a follow-up"}
                                                 >
                                                     -
                                                 </span>

@@ -24,6 +24,7 @@ import SummaryCard from "@/components/SummaryCard";
 import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
 import Pagination from "@/components/buttons/Pagination";
+import { LEAD_STATUS_OPTIONS } from "@/utils/leadStatus";
 
 const LEADS_PAGE_SIZE = 20;
 
@@ -85,7 +86,7 @@ export default function AdminDashboardPage() {
 
     const [isStatusChanging, setIsStatusChanging] = useState(false);
 
-    const statusOptions = ["new", "not pick", "interested", "follow-up", "paid", "rejected", "busy", "wrong number", "contacted"];
+    const statusOptions = LEAD_STATUS_OPTIONS;
 
     /* ================= DATA FETCHING ================= */
 

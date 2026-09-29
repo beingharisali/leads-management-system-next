@@ -8,6 +8,7 @@ import {
     FiCheckCircle, FiFilter, FiLoader, FiClock
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
+import { isUrgentStatus } from "@/utils/leadStatus";
 
 // --- Types ---
 interface Lead {
@@ -86,7 +87,11 @@ export default function CSRLeadsPanel({
             if (selectedCSR && leadCsrId !== selectedCSR) return false;
 
             return true;
-        }).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        }).sort((a, b) =>
+            // Urgent leads pinned first, then newest first
+            Number(isUrgentStatus(b.status)) - Number(isUrgentStatus(a.status)) ||
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
 
         // Stats Calculation
         const totalLeads = filtered.length;

@@ -1,12 +1,14 @@
 import ActivityTracker from "@/components/ActivityTracker";
+import UrgentLeadsNotifier from "@/components/UrgentLeadsNotifier";
 
 // Every CSR page tracks portal time (admins see the full history; the
-// CSR sees today's timer on their dashboard).
+// CSR sees today's timer on their dashboard) and watches for urgent leads
+// so the CSR is alerted wherever they are in the portal.
 export default function CsrLayout({ children }: { children: React.ReactNode }) {
     return (
         <>
             <ActivityTracker />
-            {children}
+            <UrgentLeadsNotifier>{children}</UrgentLeadsNotifier>
         </>
     );
 }

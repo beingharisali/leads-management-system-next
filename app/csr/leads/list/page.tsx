@@ -8,6 +8,7 @@ import Pagination from "@/components/buttons/Pagination";
 import { getLeadsByRole, Lead } from "@/services/lead.api";
 import { getUserId } from "@/utils/decodeToken";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
+import { LEAD_STATUS_OPTIONS, pinUrgentFirst } from "@/utils/leadStatus";
 
 // Lazy load LeadList to optimize bundle size
 const LeadList = lazy(() => import("@/components/LeadList"));
@@ -15,7 +16,7 @@ const LeadList = lazy(() => import("@/components/LeadList"));
 type FilterType = "day" | "week" | "month";
 const PAGE_SIZE = 20;
 
-const STATUS_OPTIONS = ["new", "not pick", "interested", "paid", "not interested", "busy", "wrong number"];
+const STATUS_OPTIONS = LEAD_STATUS_OPTIONS;
 
 export default function LeadsListPage() {
     const [allLeads, setAllLeads] = useState<Lead[]>([]);
@@ -76,7 +77,7 @@ export default function LeadsListPage() {
         else if (filter === "month") windowEnd.setMonth(windowEnd.getMonth() + 1);
         windowEnd.setHours(23, 59, 59, 999);
 
-        return allLeads.filter(l => {
+        return pinUrgentFirst(allLeads.filter(l => {
             const dueDate = l.followUpDate ? new Date(l.followUpDate) : null;
             const matchesDue = !!dueDate && dueDate <= windowEnd;
 
@@ -97,7 +98,7 @@ export default function LeadsListPage() {
                 selectedStatuses.includes((l.status || "").toLowerCase());
 
             return matchesDue && matchesMonth && matchesCity && matchesSource && matchesStatus;
-        });
+        }));
     }, [allLeads, filter, selectedMonths, selectedCities, selectedSources, selectedStatuses]);
 
     const totalPages = Math.max(Math.ceil(filteredLeads.length / PAGE_SIZE), 1);
