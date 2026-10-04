@@ -27,7 +27,7 @@ import {
     FiLogOut, FiPhone, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiClock, FiUserCheck, FiArchive,
     FiChevronLeft, FiChevronRight, // New Icons for Pagination
-    FiAlertTriangle
+    FiAlertTriangle, FiFileText
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -422,6 +422,7 @@ export default function CSRDashboard() {
                                 onSelect={l => { setSearchTerm(l.phone); setDateFilter("all"); }}
                             />
                             <Link href="/csr/leads/closed" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiArchive /> Closed Leads</Link>
+                            <Link href="/csr/admission" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiFileText /> Admission Form</Link>
                             <button onClick={() => setIsModalOpen(true)} className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"><FiPlus /> Create</button>
                             <button onClick={logout} className="p-3 bg-white text-rose-500 rounded-2xl shadow-sm border border-slate-100"><FiLogOut size={20} /></button>
                         </div>

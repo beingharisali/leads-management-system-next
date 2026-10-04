@@ -1,0 +1,75 @@
+/* Public admission page - styles from IDEOVERSITY_Admission_Preview_v1.1.html,
+   scoped under .idv so they don't leak into the rest of the portal. */
+.idv{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#142c2d;background:#f4f6f5;font-synthesis:none;min-height:100vh}
+.idv *{box-sizing:border-box}
+.idv main{max-width:680px;margin:auto;padding:28px 20px 48px}
+.idv header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.idv .brand{font-weight:900;letter-spacing:-1px;font-size:23px}
+.idv .brand span{color:#187565}
+.idv .badge{font-size:11px;color:#4e6964;border:1px solid #d5e0dc;border-radius:20px;padding:7px 10px}
+.idv .intro{margin:44px 0 28px}
+.idv .eyebrow{font-size:11px;font-weight:800;letter-spacing:2px;color:#187565}
+.idv h1{font-size:34px;line-height:1.15;letter-spacing:-1px;margin:10px 0 12px;font-weight:700}
+.idv h2{font-size:19px;margin:0 0 10px;font-weight:700}
+.idv h3{font-size:14px;margin:22px 0 8px;font-weight:700}
+.idv p,.idv li{font-size:14px;line-height:1.65;color:#45605a}
+.idv p{margin:8px 0 14px}
+.idv .card,.idv .course{background:#fff;border:1px solid #dce5e0;border-radius:18px;padding:24px;margin:18px 0}
+.idv .course{background:#e8f1ed;border-color:#d2e2d9}
+.idv .fee{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-top:1px solid #cfdfd6;gap:10px}
+.idv .fee span{font-size:13px}
+.idv .fee strong{font-size:15px}
+.idv .small{font-size:12px;color:#5a7069}
+.idv .step{height:28px;width:28px;background:#e7f1eb;color:#176652;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;margin-bottom:14px}
+.idv button,.idv .upload{font:inherit;font-size:14px;font-weight:650;border-radius:10px;cursor:pointer;padding:14px 18px;border:0;display:block;text-align:center;min-height:48px}
+.idv .primary{background:#166b58;color:white;width:100%;margin-top:20px}
+.idv .primary:disabled{background:#b5c7be;cursor:not-allowed}
+.idv .secondary,.idv .upload{background:#edf3f0;border:1px solid #cadbd1;color:#215d4a;width:100%;margin:12px 0}
+.idv .secondary:disabled{opacity:.6;cursor:not-allowed}
+.idv .upload input{display:block;font-size:12px;width:100%;margin-top:12px;font-weight:400}
+.idv .textButton{color:#176652;background:none;margin:auto}
+.idv .preview,.idv video{width:100%;max-height:320px;object-fit:contain;background:#edf1ef;border-radius:12px;margin-top:12px}
+.idv .selfie{max-height:260px}
+.idv video{transform:scaleX(-1)}
+.idv .check{display:flex;gap:12px;align-items:flex-start;border-top:1px solid #e2e9e5;padding-top:18px;font-size:14px;font-weight:600;line-height:1.6;cursor:pointer}
+.idv .check input{width:21px;height:21px;flex-shrink:0;accent-color:#166b58;margin-top:2px}
+.idv ul{padding-left:20px;list-style:disc}
+.idv li{margin-bottom:10px}
+.idv .preserve{white-space:pre-wrap}
+.idv .error{border:1px solid #efc3bf;border-radius:10px;background:#fff1ef;padding:14px;color:#9d2924}
+.idv .centered{text-align:center}
+.idv footer{text-align:center;margin-top:28px;font-size:11px;color:#82938c}
+.idv dl{font-size:13px}
+.idv dt{color:#657b72;margin-top:14px}
+.idv dd{margin:4px 0;overflow-wrap:anywhere}
+.idv .successIcon{font-size:26px;color:#166b58}
+.idv .printTerms{display:none;white-space:pre-wrap}
+.idv .nextStep{background:#fff5d7;border:1px solid #f0dc9c;border-radius:14px;padding:16px;margin:18px 0 6px}
+.idv .nextStep strong{display:block;font-size:15px;color:#594511}
+.idv .nextStep p{color:#594511;margin:6px 0 0}
+.idv .whatsapp{display:block;text-align:center;background:#1f9d55;color:white;font-weight:650;font-size:14px;border-radius:10px;padding:14px 18px;margin-top:14px;text-decoration:none}
+.idv .whatsapp:hover{background:#188548}
+.idv select,.idv .field input{font:inherit;width:100%;min-height:52px;border:1px solid #a7c7b8;border-radius:10px;background:white;color:#142c2d;padding:12px;margin:10px 0}
+.idv .field{display:block;margin-top:12px}
+.idv .field span{font-size:14px;font-weight:650}
+.idv .courseLabel{font-size:19px;font-weight:750}
+.idv .courseSource{font-size:14px;color:#166b58;line-height:1.6}
+.idv .outline{line-height:1.9}
+.idv .honeypot{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.idv [hidden]{display:none!important}
+.idv :focus-visible{outline:3px solid #82b5d1;outline-offset:3px}
+@media(max-width:420px){
+  .idv main{padding:20px 14px}
+  .idv h1{font-size:29px}
+  .idv .card,.idv .course{padding:20px}
+  .idv .badge{font-size:9px}
+  .idv .brand{font-size:21px}
+}
+@media print{
+  .idv{background:white}
+  .idv header,.idv .intro,.idv footer,.idv button,.idv form,.idv .loading,.idv .error,.idv .whatsapp{display:none!important}
+  .idv main{max-width:none;padding:0}
+  .idv .card{border:0;padding:0}
+  .idv .printTerms{display:block;font-size:12px}
+  .idv h1{font-size:24px}
+}
