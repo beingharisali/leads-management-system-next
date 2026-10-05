@@ -46,9 +46,19 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                 })
                 .catch(() => { /* keep showing the last known status */ });
 
+        // Skip polls while the admin's tab is in the background; catch up
+        // the moment it's back on screen.
+        const isVisible = () => document.visibilityState === "visible";
+        const onVisibilityChange = () => { if (isVisible()) load(); };
+
         load();
-        const interval = setInterval(load, PRESENCE_REFRESH_MS);
-        return () => { cancelled = true; clearInterval(interval); };
+        const interval = setInterval(() => { if (isVisible()) load(); }, PRESENCE_REFRESH_MS);
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
     }, []);
 
     const onlineCount = Object.values(presence).filter(p => p.isOnline).length;

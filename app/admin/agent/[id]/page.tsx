@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, useDeferredValue } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -61,6 +61,8 @@ export default function AdminAgentDashboard() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [leads, setLeads] = useState<Lead[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
+    // Typing stays instant; the table re-filters right after
+    const deferredSearch = useDeferredValue(searchTerm);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -183,8 +185,8 @@ export default function AdminAgentDashboard() {
             const dueDate = l.followUpDate ? new Date(l.followUpDate) : null;
 
             const matchesSearch =
-                (l.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-                (l.phone || "").includes(searchTerm);
+                (l.name?.toLowerCase() || "").includes(deferredSearch.toLowerCase()) ||
+                (l.phone || "").includes(deferredSearch);
 
             const matchesStatus =
                 selectedStatuses.length === 0 ||
@@ -259,7 +261,7 @@ export default function AdminAgentDashboard() {
         }));
     }, [
         leads,
-        searchTerm,
+        deferredSearch,
         dateFilter,
         customDates,
         selectedMonths,
@@ -325,7 +327,6 @@ export default function AdminAgentDashboard() {
             if (isClosedStatus(normalizedStatus)) {
                 setLeads(prev => prev.filter(l => l._id !== id));
                 toast.success(`Lead closed as ${normalizedStatus!.toUpperCase()}`, { id: tid });
-                fetchData(true);
                 return;
             }
 
@@ -340,8 +341,9 @@ export default function AdminAgentDashboard() {
                     : l
             ));
 
+            // The row above already holds what the server saved, so there is
+            // no need to re-download the whole lead list after every edit.
             toast.success("Success", { id: tid });
-            fetchData(true);
 
         } catch (err: any) {
             console.error("Update error detailed logs:", err);
@@ -542,7 +544,7 @@ export default function AdminAgentDashboard() {
                                         <td className="px-6 py-4">
                                             <input
                                                 defaultValue={lead.remarks}
-                                                onBlur={(e) => e.target.value !== lead.remarks && handleUpdate(lead._id, { remarks: e.target.value })}
+                                                onBlur={(e) => e.target.value !== (lead.remarks || "") && handleUpdate(lead._id, { remarks: e.target.value })}
                                                 className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm w-full"
                                                 placeholder="Add note..."
                                             />

@@ -113,14 +113,25 @@ export const getLeads = async (params: {
 // Paginated variant for lists/tables that need page controls + accurate
 // totals (admin/leads and csr/leads/list pages). Routes match the current
 // backend layout: /lead/admin/all and /lead/by-date.
+// Optional filters (admin dashboard table): csrId = one agent's leads,
+// search = name (any case) or phone contains it, status = exact status.
 export const getAllLeadsPaginated = async (
   page = 1,
   limit = 20,
+  filters?: { csrId?: string | null; search?: string; status?: string },
 ): Promise<PaginatedLeadsResult> => {
   try {
     const res = await http.get<PaginatedApiResponse<any[]>>(
       "/lead/admin/all",
-      { params: { page, limit } },
+      {
+        params: {
+          page,
+          limit,
+          csrId: filters?.csrId || undefined,
+          search: filters?.search || undefined,
+          status: filters?.status && filters.status !== "all" ? filters.status : undefined,
+        },
+      },
     );
     return {
       data: normalizeLeads(res.data.data || []),
@@ -131,6 +142,24 @@ export const getAllLeadsPaginated = async (
   } catch (err: any) {
     console.error("Fetch All Leads Error:", err.message);
     throw new Error(getErrorMessage(err, "Failed to load leads"));
+  }
+};
+
+// Admin dashboard summary cards: leads created between `from` and `to`
+// (ISO timestamps, either optional), counted per lowercase status with the
+// sum of their sale amounts.
+export interface AdminLeadSummary {
+  total: number;
+  byStatus: Record<string, { count: number; revenue: number }>;
+}
+
+export const getAdminLeadSummary = async (range: { from?: string; to?: string }): Promise<AdminLeadSummary> => {
+  try {
+    const res = await http.get<ApiResponse<AdminLeadSummary>>("/lead/admin/summary", { params: range });
+    return res.data.data;
+  } catch (err: any) {
+    console.error("Fetch Lead Summary Error:", err.message);
+    throw new Error(getErrorMessage(err, "Failed to load lead summary"));
   }
 };
 
