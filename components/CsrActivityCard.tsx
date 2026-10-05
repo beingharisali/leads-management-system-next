@@ -60,10 +60,21 @@ export default function CsrActivityCard({ csrId }: { csrId: string }) {
                 })
                 .catch(() => { /* keep showing the last known value */ });
 
+        // Skip polls while the admin's tab is in the background; catch up
+        // the moment it's back on screen.
+        const isVisible = () => document.visibilityState === "visible";
+        const onVisibilityChange = () => { if (isVisible()) load(); };
+
         load();
-        const refresh = setInterval(load, REFRESH_MS);
+        const refresh = setInterval(() => { if (isVisible()) load(); }, REFRESH_MS);
         const tick = setInterval(() => setNow(Date.now()), 1000);
-        return () => { cancelled = true; clearInterval(refresh); clearInterval(tick); };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            cancelled = true;
+            clearInterval(refresh);
+            clearInterval(tick);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
     }, [csrId, month]);
 
     if (!activity) return null;

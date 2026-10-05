@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, FormEvent } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Toaster, toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -14,7 +14,10 @@ import {
 // APIs 
 import { getAdminStats } from "@/services/dashboard.api";
 import { createCSR, updateCSRStatus } from "@/services/auth.api";
-import { getLeadsByRole, bulkInsertLeads, deleteAllLeads, createLead, LeadPayload, Lead } from "@/services/lead.api";
+import {
+    bulkInsertLeads, deleteAllLeads, createLead, LeadPayload,
+    getAllLeadsPaginated, getAdminLeadSummary, AdminLeadSummary, PaginatedLeadsResult
+} from "@/services/lead.api";
 
 // Components
 import CSRSidebar from "@/components/CsrSidebar";
@@ -29,6 +32,24 @@ import { LEAD_STATUS_OPTIONS } from "@/utils/leadStatus";
 const LEADS_PAGE_SIZE = 20;
 
 export type FilterType = "day" | "week" | "month" | "custom";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SUMMARY_DAYS: Record<string, number> = { day: 1, week: 7, month: 30 };
+
+// Date window for the summary cards - the same windows they have always
+// used: the last 1/7/30 days up to now, or the picked custom dates (whole
+// end day). Worked out here, by the browser's clock, and sent to the server.
+const summaryRange = (filter: FilterType, custom: { start: string; end: string }) => {
+    if (filter === "custom") {
+        if (!custom.start || !custom.end) return {};
+        const endDate = new Date(custom.end);
+        endDate.setHours(23, 59, 59);
+        return { from: new Date(custom.start).toISOString(), to: endDate.toISOString() };
+    }
+    return { from: new Date(Date.now() - SUMMARY_DAYS[filter] * DAY_MS).toISOString() };
+};
+
+const errorText = (err: any) => err?.message || "Connection to server failed";
 
 /* ===================== TYPES & INTERFACES ===================== */
 interface DashboardData {
@@ -50,8 +71,10 @@ export default function AdminDashboardPage() {
 
     // --- Core States ---
     const [data, setData] = useState<DashboardData | null>(null);
-    const [leads, setLeads] = useState<Lead[]>([]);
-    const [loading, setLoading] = useState(true);
+    // Summary card counts and the current page of the lead table - both
+    // worked out by the server, so the page never downloads every lead
+    const [summary, setSummary] = useState<AdminLeadSummary | null>(null);
+    const [leadsPage, setLeadsPage] = useState<PaginatedLeadsResult | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
 
@@ -61,6 +84,8 @@ export default function AdminDashboardPage() {
 
     // --- Search & Filter States ---
     const [searchQuery, setSearchQuery] = useState("");
+    // The server searches the leads; ask once typing pauses, not per key
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [selectedCSR, setSelectedCSR] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [activeGraphFilter, setActiveGraphFilter] = useState<FilterType>("month");
@@ -90,30 +115,52 @@ export default function AdminDashboardPage() {
 
     /* ================= DATA FETCHING ================= */
 
-    const fetchDashboardData = useCallback(async (isSilent = false) => {
-        if (!isSilent) setLoading(true);
-        else setRefreshing(true);
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
+    // Graphs + team sidebar
+    const loadAdminStats = useCallback(
+        () => getAdminStats(activeGraphFilter).then(setData),
+        [activeGraphFilter]
+    );
+
+    // Summary cards: leads created in the selected window, per status
+    const loadSummary = useCallback(
+        () => getAdminLeadSummary(summaryRange(activeGraphFilter, customRange)).then(setSummary),
+        [activeGraphFilter, customRange]
+    );
+
+    // Lead table: just the page on screen, filtered on the server. A reply
+    // that lands after a newer request was sent is dropped.
+    const latestPageRequest = useRef(0);
+    const loadLeadsPage = useCallback(async () => {
+        const requestId = ++latestPageRequest.current;
+        const result = await getAllLeadsPaginated(currentPage, itemsPerPage, {
+            csrId: selectedCSR,
+            search: debouncedSearch,
+            status: statusFilter,
+        });
+        if (requestId === latestPageRequest.current) setLeadsPage(result);
+    }, [currentPage, selectedCSR, debouncedSearch, statusFilter]);
+
+    useEffect(() => { loadAdminStats().catch(err => setError(errorText(err))); }, [loadAdminStats]);
+    useEffect(() => { loadSummary().catch(err => setError(errorText(err))); }, [loadSummary]);
+    useEffect(() => { loadLeadsPage().catch(err => setError(errorText(err))); }, [loadLeadsPage]);
+
+    // After a lead/agent is created, imported, converted or deleted
+    const refreshDashboard = useCallback(async () => {
+        setRefreshing(true);
         try {
-            const [statsRes, leadsRes] = await Promise.all([
-                getAdminStats(activeGraphFilter),
-                getLeadsByRole("admin"),
-            ]);
-
-            setData(statsRes);
-            setLeads((leadsRes as Lead[]) || []);
+            await Promise.all([loadAdminStats(), loadSummary(), loadLeadsPage()]);
             setError("");
         } catch (err: any) {
-            setError(err.message || "Connection to server failed");
+            setError(errorText(err));
         } finally {
-            setLoading(false);
             setRefreshing(false);
         }
-    }, [activeGraphFilter]);
-
-    useEffect(() => {
-        fetchDashboardData();
-    }, [fetchDashboardData]);
+    }, [loadAdminStats, loadSummary, loadLeadsPage]);
 
     /* ================= ACTION HANDLERS ================= */
 
@@ -169,7 +216,7 @@ export default function AdminDashboardPage() {
             toast.success("Lead Created Successfully", { id: toastId });
             toggleModal('lead', false);
             setLeadForm({ name: "", phone: "", city: "", course: "", source: "", remarks: "", assignedTo: "" });
-            fetchDashboardData(true);
+            refreshDashboard();
         } catch (err: any) { toast.error(err.message || "Failed to create lead", { id: toastId }); }
     };
 
@@ -181,7 +228,7 @@ export default function AdminDashboardPage() {
             toast.success("Agent Registered!", { id: toastId });
             toggleModal('csr', false);
             setCsrForm({ name: "", email: "", password: "", personalPhone: "", officialPhone: "" });
-            fetchDashboardData(true);
+            refreshDashboard();
         } catch (err: any) { toast.error(err.message || "Failed to register agent", { id: toastId }); }
     };
 
@@ -193,7 +240,7 @@ export default function AdminDashboardPage() {
             await bulkInsertLeads(selectedFile, assignToCSR);
             toast.success("Import Successful", { id: toastId });
             toggleModal('excel', false);
-            fetchDashboardData(true);
+            refreshDashboard();
         } catch (err: any) { toast.error(err.message || "Failed to import leads", { id: toastId }); } finally { setUploading(false); }
     };
 
@@ -205,7 +252,7 @@ export default function AdminDashboardPage() {
         try {
             await deleteAllLeads();
             toast.success("All leads deleted successfully", { id: toastId });
-            fetchDashboardData(true);
+            refreshDashboard();
         } catch (err: any) {
             toast.error(err.message || "Failed to delete leads", { id: toastId });
         }
@@ -214,36 +261,18 @@ export default function AdminDashboardPage() {
     /* ================= CALCULATIONS (DATE FILTER LOGIC) ================= */
 
     const stats = useMemo(() => {
-        const now = new Date();
-        const dateFiltered = leads.filter(l => {
-            if (!l.createdAt) return false;
-            const leadDate = new Date(l.createdAt);
+        const byStatus = summary?.byStatus || {};
+        const getCount = (statusName: string) => byStatus[statusName.toLowerCase()]?.count || 0;
 
-            if (activeGraphFilter === "custom") {
-                if (!customRange.start || !customRange.end) return true;
-                const startDate = new Date(customRange.start);
-                const endDate = new Date(customRange.end);
-                endDate.setHours(23, 59, 59);
-                return leadDate >= startDate && leadDate <= endDate;
-            }
-
-            const diffInDays = (now.getTime() - leadDate.getTime()) / (1000 * 3600 * 24);
-            if (activeGraphFilter === "day") return diffInDays <= 1;
-            if (activeGraphFilter === "week") return diffInDays <= 7;
-            if (activeGraphFilter === "month") return diffInDays <= 30;
-            return true;
-        });
-
-        const getCount = (statusName: string) =>
-            dateFiltered.filter(l => l.status?.toLowerCase() === statusName.toLowerCase()).length;
-
-        const sales = dateFiltered.filter(l => ["paid", "sale", "active"].includes(l.status?.toLowerCase() || ""));
-        const revenue = sales.reduce((sum, l) => sum + (Number(l.saleAmount) || 0), 0);
-        const rate = dateFiltered.length > 0 ? ((sales.length / dateFiltered.length) * 100).toFixed(1) : 0;
+        const total = summary?.total || 0;
+        const saleStatuses = ["paid", "sale", "active"];
+        const sales = saleStatuses.reduce((sum, s) => sum + getCount(s), 0);
+        const revenue = saleStatuses.reduce((sum, s) => sum + (Number(byStatus[s]?.revenue) || 0), 0);
+        const rate = total > 0 ? ((sales / total) * 100).toFixed(1) : 0;
 
         return {
-            total: dateFiltered.length,
-            sales: sales.length,
+            total,
+            sales,
             revenue,
             rate: Number(rate),
             paid: getCount("paid"),
@@ -256,33 +285,20 @@ export default function AdminDashboardPage() {
             interested: getCount("interested"),
             notPick: getCount("not pick")
         };
-    }, [leads, activeGraphFilter, customRange]);
+    }, [summary]);
 
-    const filteredLeadsList = useMemo(() => {
-        return leads.filter(l => {
-            const agentId = typeof l.assignedTo === 'object' ? (l.assignedTo as any)?._id : l.assignedTo;
-            const matchesCSR = !selectedCSR || agentId === selectedCSR;
-            const matchesSearch = !searchQuery || l.name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.phone?.includes(searchQuery);
-            const matchesStatus = statusFilter === "all" || l.status?.toLowerCase() === statusFilter.toLowerCase();
-            return matchesCSR && matchesSearch && matchesStatus;
-        });
-    }, [leads, selectedCSR, searchQuery, statusFilter]);
-
-    // --- PAGINATION LOGIC ---
-    const paginatedLeads = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        return filteredLeadsList.slice(startIndex, startIndex + itemsPerPage);
-    }, [filteredLeadsList, currentPage]);
-
-    const totalPages = Math.ceil(filteredLeadsList.length / itemsPerPage);
+    // --- PAGINATION (done by the server) ---
+    const paginatedLeads = leadsPage?.data || [];
+    const filteredCount = leadsPage?.totalCount || 0;
+    const totalPages = Math.ceil(filteredCount / itemsPerPage);
 
     // Reset to page 1 when filter changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchQuery, statusFilter, selectedCSR]);
+    }, [debouncedSearch, statusFilter, selectedCSR]);
 
-    if (loading && !data) return <Loading />;
     if (error) return <ErrorMessage message={error} />;
+    if (!data || !summary || !leadsPage) return <Loading />;
 
     return (
         <div className="p-4 md:p-8 bg-[#F8FAFC] min-h-screen">
@@ -419,15 +435,15 @@ export default function AdminDashboardPage() {
                         <CSRLeadsPanel
                             leads={paginatedLeads}
                             selectedCSR={selectedCSR}
-                            onConvertToSale={() => fetchDashboardData(true)}
-                            onDeleteLead={() => fetchDashboardData(true)}
+                            onConvertToSale={() => refreshDashboard()}
+                            onDeleteLead={() => refreshDashboard()}
                         />
 
                         {/* PAGINATION CONTROLS */}
                         {totalPages > 1 && (
                             <div className="p-6 bg-slate-50/50 border-t flex items-center justify-between">
                                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                    Showing {paginatedLeads.length} of {filteredLeadsList.length} leads
+                                    Showing {paginatedLeads.length} of {filteredCount} leads
                                 </p>
                                 <div className="flex items-center gap-2">
                                     <button
@@ -439,7 +455,10 @@ export default function AdminDashboardPage() {
                                     </button>
 
                                     <div className="flex items-center gap-1">
-                                        {[...Array(totalPages)].map((_, i) => (
+                                        {Array.from(
+                                            { length: Math.min(totalPages, currentPage + 2) - Math.max(0, currentPage - 3) },
+                                            (_, k) => Math.max(0, currentPage - 3) + k
+                                        ).map((i) => (
                                             <button
                                                 key={i}
                                                 onClick={() => setCurrentPage(i + 1)}
@@ -447,7 +466,7 @@ export default function AdminDashboardPage() {
                                             >
                                                 {i + 1}
                                             </button>
-                                        )).slice(Math.max(0, currentPage - 3), Math.min(totalPages, currentPage + 2))}
+                                        ))}
                                     </div>
 
                                     <button
