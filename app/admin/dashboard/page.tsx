@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Toaster, toast } from "react-hot-toast";
+import { FiCheckSquare } from "react-icons/fi";
+import TaskNotificationBell from "@/components/tasks/TaskNotificationBell";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     FiPlus, FiUploadCloud, FiLogOut, FiTrendingUp,
@@ -371,6 +374,10 @@ export default function AdminDashboardPage() {
                         <FiUploadCloud /> Excel Import
                         <input type="file" hidden accept=".xlsx, .xls" onChange={(e) => { setSelectedFile(e.target.files?.[0] || null); toggleModal('excel', true); }} />
                     </label>
+                    <Link href="/admin/tasks" className="flex items-center gap-2 bg-indigo-50 text-indigo-600 border border-indigo-100 px-6 py-3.5 rounded-2xl font-bold text-sm hover:bg-indigo-100">
+                        <FiCheckSquare /> Team Tasks
+                    </Link>
+                    <TaskNotificationBell taskBasePath="/admin/tasks" />
                     <button onClick={() => { localStorage.clear(); window.location.href = "/login"; }} className="p-4 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all">
                         <FiLogOut size={20} />
                     </button>

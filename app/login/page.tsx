@@ -31,7 +31,10 @@ export default function LoginPage() {
 
             // Redirect with full page refresh to ensure role sync
             setTimeout(() => {
-                window.location.href = user.role === "admin" ? "/admin/dashboard" : "/csr/dashboard";
+                window.location.href =
+                    user.role === "admin" ? "/admin/dashboard"
+                        : user.role === "staff" ? "/staff/tasks"
+                            : "/csr/dashboard";
             }, 800);
 
         } catch (err: any) {
