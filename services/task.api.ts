@@ -188,6 +188,8 @@ export interface RecurringTask {
   frequency: Frequency;
   weekday?: number;
   dayOfMonth?: number;
+  // daily: weekdays with no task (0 = Sunday). Older templates may only have skipSundays.
+  skipWeekdays?: number[];
   skipSundays: boolean;
   dueTime: string;
   startDate: string;
@@ -206,6 +208,7 @@ export interface RecurringInput {
   frequency: Frequency;
   weekday?: number;
   dayOfMonth?: number;
+  skipWeekdays?: number[];
   skipSundays?: boolean;
   dueTime: string;
   startDate?: string;
