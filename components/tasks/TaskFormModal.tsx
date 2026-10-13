@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { FiPlus, FiTrash2, FiX } from "react-icons/fi";
 import { createTask, TaskDetail, TaskPriority, TeamMember, updateTask, Workflow } from "@/services/task.api";
@@ -13,6 +13,8 @@ interface Props {
     task?: TaskDetail;
     // Pre-selected assignee when creating (e.g. from a workload row)
     defaultAssignee?: string;
+    // Shown under the title (the one-time / repeating switch on All Tasks)
+    header?: ReactNode;
     onClose: () => void;
     onSaved: () => void;
 }
@@ -21,7 +23,7 @@ const inputClass = "w-full p-3.5 bg-slate-50 border border-slate-100 rounded-2xl
 const labelClass = "text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-1 block";
 
 // Admin form to assign a new task (to one or several people) or edit one.
-export default function TaskFormModal({ workflows, team, task, defaultAssignee, onClose, onSaved }: Props) {
+export default function TaskFormModal({ workflows, team, task, defaultAssignee, header, onClose, onSaved }: Props) {
     const editing = Boolean(task);
     const initialDue = task ? splitDueAt(task.dueAt) : null;
 
@@ -112,6 +114,7 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
                     <h2 className="text-xl font-black text-slate-800">{editing ? "Edit Task" : "Assign New Task"}</h2>
                     <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><FiX size={20} /></button>
                 </div>
+                {header}
 
                 <div>
                     <label className={labelClass}>Title *</label>

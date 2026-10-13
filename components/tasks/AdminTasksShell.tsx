@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Toaster } from "react-hot-toast";
-import { FiArrowLeft, FiCheckSquare, FiGrid, FiList, FiLogOut, FiRepeat, FiUsers } from "react-icons/fi";
+import { FiArrowLeft, FiCheckSquare, FiGrid, FiList, FiLogOut, FiUsers } from "react-icons/fi";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import TaskNotificationBell from "./TaskNotificationBell";
 
 const TABS = [
     { href: "/admin/tasks", label: "Dashboard", icon: FiGrid },
     { href: "/admin/tasks/list", label: "All Tasks", icon: FiList },
-    { href: "/admin/tasks/recurring", label: "Repeating", icon: FiRepeat },
     { href: "/admin/tasks/team", label: "Team", icon: FiUsers },
 ];
 

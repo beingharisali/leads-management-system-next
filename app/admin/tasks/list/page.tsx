@@ -3,24 +3,29 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { FiInbox, FiPlus, FiSearch } from "react-icons/fi";
-import { getTaskMeta, getTasks, getTeam, TaskSummary, TeamMember, Workflow } from "@/services/task.api";
+import { FiInbox, FiPlus, FiRepeat, FiSearch } from "react-icons/fi";
+import { getRecurringTasks, getTaskMeta, getTasks, getTeam, RecurringTask, TaskSummary, TeamMember, Workflow } from "@/services/task.api";
 import { STATUS_LABELS } from "@/utils/taskFormat";
 import Loading from "@/components/Loading";
 import TaskCard from "@/components/tasks/TaskCard";
 import TaskFormModal from "@/components/tasks/TaskFormModal";
+import { RecurringForm, RecurringTaskList } from "@/components/tasks/RecurringTasks";
 
 const PAGE_SIZE = 25;
 const selectClass = "p-3 bg-white border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 outline-none";
 
-// Every task, filterable by person, workflow, status, open/history. Filters
-// live in the URL so dashboard links (e.g. "Overdue") open pre-filtered.
+type TaskKind = "once" | "repeating";
+
+// Every task, filterable by person, workflow, status, open/history, plus the
+// repeating templates. One-time and repeating tasks are both assigned here.
+// Filters live in the URL so dashboard links (e.g. "Overdue") open pre-filtered.
 function TaskListPage() {
     const router = useRouter();
     const pathname = usePathname();
     const params = useSearchParams();
 
-    const scope = (params.get("scope") as "open" | "history" | "all") || "open";
+    const scope = (params.get("scope") as "open" | "history" | "all" | "repeating") || "open";
+    const repeatingView = scope === "repeating";
     const assignedTo = params.get("assignedTo") || "";
     const category = params.get("category") || "";
     const status = params.get("status") || "";
@@ -35,7 +40,9 @@ function TaskListPage() {
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState(q);
-    const [creating, setCreating] = useState(false);
+    const [creating, setCreating] = useState<TaskKind | null>(null);
+    const [templates, setTemplates] = useState<RecurringTask[] | null>(null);
+    const [editingTemplate, setEditingTemplate] = useState<RecurringTask | null>(null);
 
     const setFilter = (key: string, value: string) => {
         const next = new URLSearchParams(params.toString());
@@ -46,10 +53,17 @@ function TaskListPage() {
         router.replace(`${pathname}?${next.toString()}`);
     };
 
+    const loadTemplates = useCallback(
+        () => getRecurringTasks().then(setTemplates).catch((err: Error) => { toast.error(err.message); }),
+        []
+    );
+
     const load = useCallback(async (pageToLoad: number) => {
+        // The repeating view lists templates, not tasks
+        if (repeatingView) return;
         setLoading(true);
         try {
-            const res = await getTasks({ scope, assignedTo, category, status, overdue, q, page: pageToLoad, limit: PAGE_SIZE });
+            const res = await getTasks({ scope: scope as "open" | "history" | "all", assignedTo, category, status, overdue, q, page: pageToLoad, limit: PAGE_SIZE });
             setTasks((prev) => (pageToLoad === 1 ? res.data : [...prev, ...res.data]));
             setPage(pageToLoad);
             setPages(res.pagination.pages);
@@ -59,9 +73,10 @@ function TaskListPage() {
         } finally {
             setLoading(false);
         }
-    }, [scope, assignedTo, category, status, overdue, q]);
+    }, [repeatingView, scope, assignedTo, category, status, overdue, q]);
 
     useEffect(() => { load(1); }, [load]);
+    useEffect(() => { if (repeatingView) loadTemplates(); }, [repeatingView, loadTemplates]);
     useEffect(() => {
         getTaskMeta().then((m) => setWorkflows(m.workflows)).catch(() => { });
         getTeam().then(setTeam).catch(() => { });
@@ -77,21 +92,54 @@ function TaskListPage() {
 
     const statusOptions = scope === "history" ? ["completed", "cancelled"] : scope === "open" ? ["todo", "in_progress", "blocked", "submitted"] : Object.keys(STATUS_LABELS);
 
+    const needle = q.toLowerCase();
+    const shownTemplates = (templates || []).filter((t) =>
+        (!assignedTo || t.assignedTo?._id === assignedTo) &&
+        (!category || t.category === category) &&
+        (!needle || t.title.toLowerCase().includes(needle))
+    );
+
+    // After saving from the create modal, refresh the list on screen
+    const afterSave = () => {
+        setCreating(null);
+        if (repeatingView) loadTemplates(); else load(1);
+    };
+
+    // One-time / repeating switch at the top of the create form
+    const kindSwitch = (kind: TaskKind) => (
+        <div className="flex bg-slate-100 p-1 rounded-2xl w-fit">
+            {(["once", "repeating"] as const).map((k) => (
+                <button
+                    type="button"
+                    key={k}
+                    onClick={() => setCreating(k)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 ${kind === k ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}
+                >
+                    {k === "once" ? "One-time task" : <><FiRepeat /> Repeating task</>}
+                </button>
+            ))}
+        </div>
+    );
+
     return (
         <div>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
                     <h2 className="text-2xl font-black text-slate-900">All Tasks</h2>
-                    <p className="text-sm text-slate-400 font-medium">{total} task{total === 1 ? "" : "s"}{overdue ? " overdue" : ""}</p>
+                    <p className="text-sm text-slate-400 font-medium">
+                        {repeatingView
+                            ? `${shownTemplates.length} repeating task${shownTemplates.length === 1 ? "" : "s"} · a task is created automatically on every day each one falls on`
+                            : `${total} task${total === 1 ? "" : "s"}${overdue ? " overdue" : ""}`}
+                    </p>
                 </div>
-                <button onClick={() => setCreating(true)} className="px-5 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-indigo-100"><FiPlus /> Assign Task</button>
+                <button onClick={() => setCreating(repeatingView ? "repeating" : "once")} className="px-5 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-indigo-100"><FiPlus /> Assign Task</button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 mb-6 bg-white p-3 rounded-[1.5rem] border border-slate-100">
                 <div className="flex bg-slate-100 p-1 rounded-2xl">
-                    {(["open", "history", "all"] as const).map((s) => (
+                    {(["open", "history", "all", "repeating"] as const).map((s) => (
                         <button key={s} onClick={() => setFilter("scope", s === "open" ? "" : s)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase ${scope === s ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400"}`}>
-                            {s === "open" ? "Open" : s === "history" ? "History" : "All"}
+                            {s === "open" ? "Open" : s === "history" ? "History" : s === "all" ? "All" : "Repeating"}
                         </button>
                     ))}
                 </div>
@@ -103,23 +151,33 @@ function TaskListPage() {
                     <option value="">All workflows</option>
                     {workflows.map((w) => <option key={w.key} value={w.key}>{w.label}</option>)}
                 </select>
-                <select className={selectClass} value={status} onChange={(e) => setFilter("status", e.target.value)}>
-                    <option value="">Any status</option>
-                    {statusOptions.map((s) => <option key={s} value={s}>{STATUS_LABELS[s as keyof typeof STATUS_LABELS]}</option>)}
-                </select>
-                <button
-                    onClick={() => setFilter("overdue", overdue ? "" : "1")}
-                    className={`px-4 py-3 rounded-2xl text-[10px] font-black uppercase ${overdue ? "bg-rose-500 text-white" : "bg-rose-50 text-rose-600"}`}
-                >
-                    Overdue only
-                </button>
+                {!repeatingView && (
+                    <>
+                        <select className={selectClass} value={status} onChange={(e) => setFilter("status", e.target.value)}>
+                            <option value="">Any status</option>
+                            {statusOptions.map((s) => <option key={s} value={s}>{STATUS_LABELS[s as keyof typeof STATUS_LABELS]}</option>)}
+                        </select>
+                        <button
+                            onClick={() => setFilter("overdue", overdue ? "" : "1")}
+                            className={`px-4 py-3 rounded-2xl text-[10px] font-black uppercase ${overdue ? "bg-rose-500 text-white" : "bg-rose-50 text-rose-600"}`}
+                        >
+                            Overdue only
+                        </button>
+                    </>
+                )}
                 <div className="relative flex-1 min-w-[180px]">
                     <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search titles..." className="w-full pl-10 pr-3 py-3 bg-slate-50 rounded-2xl text-xs font-bold outline-none" />
                 </div>
             </div>
 
-            {loading && page === 1 ? (
+            {repeatingView ? (
+                templates ? (
+                    <RecurringTaskList items={shownTemplates} workflows={workflows} onEdit={setEditingTemplate} onChanged={loadTemplates} />
+                ) : (
+                    <Loading />
+                )
+            ) : loading && page === 1 ? (
                 <Loading />
             ) : tasks.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-3xl border-2 border-dashed border-slate-200">
@@ -132,19 +190,39 @@ function TaskListPage() {
                 </div>
             )}
 
-            {page < pages && (
+            {!repeatingView && page < pages && (
                 <button disabled={loading} onClick={() => load(page + 1)} className="mt-5 w-full py-3 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">
                     {loading ? "Loading..." : "Load more"}
                 </button>
             )}
 
-            {creating && (
+            {creating === "once" && (
                 <TaskFormModal
                     workflows={workflows}
                     team={team}
                     defaultAssignee={assignedTo || undefined}
-                    onClose={() => setCreating(false)}
-                    onSaved={() => { setCreating(false); load(1); }}
+                    header={kindSwitch("once")}
+                    onClose={() => setCreating(null)}
+                    onSaved={afterSave}
+                />
+            )}
+            {creating === "repeating" && (
+                <RecurringForm
+                    workflows={workflows}
+                    team={team}
+                    defaultAssignee={assignedTo || undefined}
+                    header={kindSwitch("repeating")}
+                    onClose={() => setCreating(null)}
+                    onSaved={afterSave}
+                />
+            )}
+            {editingTemplate && (
+                <RecurringForm
+                    template={editingTemplate}
+                    workflows={workflows}
+                    team={team}
+                    onClose={() => setEditingTemplate(null)}
+                    onSaved={() => { setEditingTemplate(null); loadTemplates(); }}
                 />
             )}
         </div>

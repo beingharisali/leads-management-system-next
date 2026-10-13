@@ -5,7 +5,7 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import {
     FiArrowLeft, FiCalendar, FiCheck, FiCheckCircle, FiClock, FiEdit3, FiFile, FiPaperclip,
-    FiPlay, FiRepeat, FiSend, FiSlash, FiUser, FiX, FiXCircle, FiAlertOctagon, FiUnlock,
+    FiPlay, FiRepeat, FiSend, FiSlash, FiUser, FiX, FiXCircle, FiUnlock,
 } from "react-icons/fi";
 import {
     cancelTask, getTask, getTaskMeta, getTeam, reviewTask, submitTask, TaskDetail, TeamMember,
@@ -60,8 +60,6 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
     // Inputs
     const [note, setNote] = useState("");
     const [files, setFiles] = useState<File[]>([]);
-    const [blockReason, setBlockReason] = useState("");
-    const [showBlock, setShowBlock] = useState(false);
     const [reviewNote, setReviewNote] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
 
@@ -130,12 +128,6 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
             !window.confirm(`Only ${doneSteps} of ${task.checklist.length} checklist steps are ticked. Submit anyway?`)) return;
         const ok = await run(() => submitTask(task._id, note.trim(), files), task.requiresApproval ? "Submitted for approval" : "Task completed");
         if (ok) { setNote(""); setFiles([]); }
-    };
-
-    const block = async (e: FormEvent) => {
-        e.preventDefault();
-        const ok = await run(() => updateTaskProgress(task._id, "block", blockReason.trim()), "Marked as blocked. The admin has been notified.");
-        if (ok) { setShowBlock(false); setBlockReason(""); }
     };
 
     const review = async (decision: "approve" | "reject") => {
@@ -232,19 +224,11 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
                                 {task.status === "todo" && (
                                     <button disabled={busy} onClick={() => run(() => updateTaskProgress(task._id, "start"), "Work started")} className="px-5 py-3 rounded-2xl bg-blue-600 text-white text-xs font-black uppercase flex items-center gap-2"><FiPlay /> Start work</button>
                                 )}
-                                {task.status !== "blocked" ? (
-                                    <button disabled={busy} onClick={() => setShowBlock((s) => !s)} className="px-5 py-3 rounded-2xl bg-amber-50 text-amber-700 border border-amber-100 text-xs font-black uppercase flex items-center gap-2"><FiAlertOctagon /> I&apos;m blocked</button>
-                                ) : (
+                                {/* Tasks can no longer be marked blocked; this only resumes ones blocked earlier */}
+                                {task.status === "blocked" && (
                                     <button disabled={busy} onClick={() => run(() => updateTaskProgress(task._id, "unblock"), "Back in progress")} className="px-5 py-3 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-black uppercase flex items-center gap-2"><FiUnlock /> No longer blocked</button>
                                 )}
                             </div>
-
-                            {showBlock && (
-                                <form onSubmit={block} className="mb-6 p-4 rounded-2xl bg-amber-50/60 border border-amber-100 space-y-3">
-                                    <textarea required rows={2} maxLength={1000} value={blockReason} onChange={(e) => setBlockReason(e.target.value)} placeholder="What is stopping the work? (e.g. waiting for the student list from accounts)" className="w-full p-3 rounded-xl bg-white border border-amber-100 text-sm outline-none" />
-                                    <button disabled={busy} className="px-5 py-2.5 rounded-xl bg-amber-600 text-white text-xs font-black uppercase">Report blocker</button>
-                                </form>
-                            )}
 
                             <form onSubmit={submit} className="space-y-3">
                                 <p className="text-sm font-black text-slate-700">Submit completion proof</p>
