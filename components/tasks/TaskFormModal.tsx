@@ -3,7 +3,7 @@
 import { FormEvent, ReactNode, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { FiPlus, FiTrash2, FiX } from "react-icons/fi";
-import { createTask, TaskDetail, TaskPriority, TeamMember, updateTask, Workflow } from "@/services/task.api";
+import { createOwnTask, createTask, TaskDetail, TaskPriority, TeamMember, updateTask, Workflow } from "@/services/task.api";
 import { splitDueAt, toDueAtIso, todayKey, tomorrowKey } from "@/utils/taskFormat";
 
 interface Props {
@@ -15,6 +15,9 @@ interface Props {
     defaultAssignee?: string;
     // Shown under the title (the one-time / repeating switch on All Tasks)
     header?: ReactNode;
+    // A team member adding a task for themselves: no assignee picker or
+    // approval switch (the server assigns it to them and always requires approval)
+    forSelf?: boolean;
     onClose: () => void;
     onSaved: () => void;
 }
@@ -23,7 +26,7 @@ const inputClass = "w-full p-3.5 bg-slate-50 border border-slate-100 rounded-2xl
 const labelClass = "text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-1 block";
 
 // Admin form to assign a new task (to one or several people) or edit one.
-export default function TaskFormModal({ workflows, team, task, defaultAssignee, header, onClose, onSaved }: Props) {
+export default function TaskFormModal({ workflows, team, task, defaultAssignee, header, forSelf = false, onClose, onSaved }: Props) {
     const editing = Boolean(task);
     const initialDue = task ? splitDueAt(task.dueAt) : null;
 
@@ -72,7 +75,7 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
 
     const submit = async (e: FormEvent) => {
         e.preventDefault();
-        if (assignees.length === 0) return toast.error("Choose who the task is for.");
+        if (!forSelf && assignees.length === 0) return toast.error("Choose who the task is for.");
         if (dueDay < day) return toast.error("The deadline can't be before the task day.");
 
         const payload = {
@@ -88,7 +91,11 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
 
         setSaving(true);
         try {
-            if (task) {
+            if (forSelf) {
+                // requiresApproval is ignored here: the server always requires it
+                await createOwnTask(payload);
+                toast.success("Task added");
+            } else if (task) {
                 await updateTask(task._id, { ...payload, assignedTo: assignees[0] });
                 toast.success("Task updated");
             } else {
@@ -111,7 +118,7 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
                 className="bg-white w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-[2rem] shadow-2xl p-7 space-y-5"
             >
                 <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-black text-slate-800">{editing ? "Edit Task" : "Assign New Task"}</h2>
+                    <h2 className="text-xl font-black text-slate-800">{editing ? "Edit Task" : forSelf ? "Add a Task for Myself" : "Assign New Task"}</h2>
                     <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><FiX size={20} /></button>
                 </div>
                 {header}
@@ -143,25 +150,27 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
                     </div>
                 </div>
 
-                <div>
-                    <label className={labelClass}>{editing ? "Assigned to *" : "Assign to * (pick one or more)"}</label>
-                    <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto">
-                        {assignable.length === 0 && <p className="text-xs text-slate-400 font-bold">No active team members. Add staff from the Team page.</p>}
-                        {assignable.map((m) => {
-                            const selected = assignees.includes(m._id);
-                            return (
-                                <button
-                                    type="button"
-                                    key={m._id}
-                                    onClick={() => toggleAssignee(m._id)}
-                                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${selected ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"}`}
-                                >
-                                    {m.name} <span className={`uppercase text-[9px] ${selected ? "text-indigo-200" : "text-slate-400"}`}>{m.role}</span>
-                                </button>
-                            );
-                        })}
+                {!forSelf && (
+                    <div>
+                        <label className={labelClass}>{editing ? "Assigned to *" : "Assign to * (pick one or more)"}</label>
+                        <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto">
+                            {assignable.length === 0 && <p className="text-xs text-slate-400 font-bold">No active team members. Add staff from the Team page.</p>}
+                            {assignable.map((m) => {
+                                const selected = assignees.includes(m._id);
+                                return (
+                                    <button
+                                        type="button"
+                                        key={m._id}
+                                        onClick={() => toggleAssignee(m._id)}
+                                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${selected ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"}`}
+                                    >
+                                        {m.name} <span className={`uppercase text-[9px] ${selected ? "text-indigo-200" : "text-slate-400"}`}>{m.role}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <div>
                     <label className={labelClass}>Task day *</label>
@@ -217,18 +226,22 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
                     </div>
                 </div>
 
-                <label className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer">
-                    <input type="checkbox" className="mt-1 h-4 w-4 accent-indigo-600" checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} />
-                    <span>
-                        <span className="block text-sm font-bold text-slate-700">I approve completion</span>
-                        <span className="block text-xs text-slate-400">When ticked, the team member&apos;s proof waits for your approval. Otherwise submitting completes the task.</span>
-                    </span>
-                </label>
+                {forSelf ? (
+                    <p className="text-xs text-slate-400 font-semibold ml-1">This task is assigned to you. When you submit it, the admin will approve it.</p>
+                ) : (
+                    <label className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer">
+                        <input type="checkbox" className="mt-1 h-4 w-4 accent-indigo-600" checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} />
+                        <span>
+                            <span className="block text-sm font-bold text-slate-700">I approve completion</span>
+                            <span className="block text-xs text-slate-400">When ticked, the team member&apos;s proof waits for your approval. Otherwise submitting completes the task.</span>
+                        </span>
+                    </label>
+                )}
 
                 <div className="flex justify-end gap-3 pt-2">
                     <button type="button" onClick={onClose} className="px-6 py-3.5 rounded-2xl font-bold text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
                     <button type="submit" disabled={saving} className="px-6 py-3.5 rounded-2xl font-bold text-sm bg-indigo-600 text-white shadow-lg shadow-indigo-100 disabled:opacity-60">
-                        {saving ? "Saving..." : editing ? "Save Changes" : "Assign Task"}
+                        {saving ? "Saving..." : editing ? "Save Changes" : forSelf ? "Add Task" : "Assign Task"}
                     </button>
                 </div>
             </form>
