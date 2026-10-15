@@ -46,6 +46,8 @@ export interface TaskSummary {
   blockedReason?: string;
   assignedTo: UserRef;
   createdBy?: UserRef;
+  // Added by the team member for themselves
+  selfAssigned?: boolean;
   missedDeadline: boolean;
   isOverdue: boolean;
   recurring: boolean;
@@ -174,6 +176,9 @@ export interface TaskInput {
   checklist?: { _id?: string; text: string }[];
 }
 
+// A team member's task for themselves (always assigned to them, always approved by the admin)
+export type OwnTaskInput = Omit<TaskInput, "assignedTo" | "requiresApproval">;
+
 export type Frequency = "daily" | "weekly" | "monthly";
 
 export interface RecurringTask {
@@ -218,7 +223,7 @@ export interface RecurringInput {
 
 export interface AppNotification {
   _id: string;
-  type: "task_assigned" | "task_overdue" | "task_submitted" | "task_approved" | "task_rejected" | "task_blocked" | "task_cancelled";
+  type: "task_assigned" | "task_overdue" | "task_submitted" | "task_approved" | "task_rejected" | "task_blocked" | "task_cancelled" | "task_self_created";
   message: string;
   task?: string;
   read: boolean;
@@ -262,6 +267,9 @@ export const getTaskDashboard = () =>
 
 export const createTask = (input: TaskInput) =>
   wrap(async () => (await http.post("/tasks", input)).data.data as TaskSummary[], "Failed to create the task");
+
+export const createOwnTask = (input: OwnTaskInput) =>
+  wrap(async () => (await http.post("/tasks/self", input)).data.data as TaskSummary, "Failed to add the task");
 
 export const updateTask = (id: string, input: Partial<TaskInput>) =>
   wrap(async () => (await http.patch(`/tasks/${id}`, input)).data.data, "Failed to update the task");

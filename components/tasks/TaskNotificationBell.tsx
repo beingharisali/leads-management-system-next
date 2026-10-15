@@ -17,6 +17,7 @@ const TYPE_ICONS: Record<AppNotification["type"], string> = {
     task_rejected: "↩️",
     task_blocked: "🚧",
     task_cancelled: "✖️",
+    task_self_created: "📝",
 };
 
 // Task notifications (overdue deadlines, submissions, approvals...). Polls

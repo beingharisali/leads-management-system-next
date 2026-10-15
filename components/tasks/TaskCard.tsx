@@ -27,6 +27,9 @@ export default function TaskCard({
                 <StatusBadge status={task.status} overdue={task.isOverdue} />
                 <CategoryBadge label={workflowLabel(task.category, workflows)} />
                 <PriorityBadge priority={task.priority} />
+                {task.selfAssigned && (
+                    <span className="text-[10px] font-black uppercase text-indigo-400 flex items-center gap-1"><FiUser /> Self-added</span>
+                )}
                 {task.recurring && (
                     <span className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1"><FiRepeat /> Repeating</span>
                 )}

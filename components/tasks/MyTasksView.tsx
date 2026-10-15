@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { FiAlertTriangle, FiArchive, FiCalendar, FiInbox, FiRefreshCw, FiSend, FiSun } from "react-icons/fi";
+import { FiAlertTriangle, FiArchive, FiCalendar, FiInbox, FiPlus, FiRefreshCw, FiSend, FiSun } from "react-icons/fi";
 import { getTaskMeta, getTasks, TaskSummary, Workflow } from "@/services/task.api";
 import { groupMyTasks } from "@/utils/taskFormat";
 import Loading from "@/components/Loading";
 import TaskCard from "./TaskCard";
+import TaskFormModal from "./TaskFormModal";
 
 type Tab = "today" | "overdue" | "upcoming" | "submitted" | "history";
 
@@ -24,6 +25,7 @@ export default function MyTasksView({ basePath }: { basePath: string }) {
     const [historyPages, setHistoryPages] = useState(1);
     const [tab, setTab] = useState<Tab>("today");
     const [loading, setLoading] = useState(true);
+    const [adding, setAdding] = useState(false);
 
     const loadOpen = useCallback(async () => {
         try {
@@ -106,9 +108,15 @@ export default function MyTasksView({ basePath }: { basePath: string }) {
                     </button>
                 ))}
                 <button
+                    onClick={() => setAdding(true)}
+                    className="ml-auto px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wide flex items-center gap-2 bg-indigo-600 text-white shadow-lg shadow-indigo-100"
+                >
+                    <FiPlus /> New Task
+                </button>
+                <button
                     onClick={() => { loadOpen(); if (tab === "history") loadHistory(1); }}
                     title="Refresh"
-                    className="ml-auto p-3 bg-white rounded-2xl border border-slate-100 text-slate-500 hover:bg-slate-50"
+                    className="p-3 bg-white rounded-2xl border border-slate-100 text-slate-500 hover:bg-slate-50"
                 >
                     <FiRefreshCw />
                 </button>
@@ -134,6 +142,16 @@ export default function MyTasksView({ basePath }: { basePath: string }) {
                 >
                     Load more
                 </button>
+            )}
+
+            {adding && (
+                <TaskFormModal
+                    workflows={workflows}
+                    team={[]}
+                    forSelf
+                    onClose={() => setAdding(false)}
+                    onSaved={() => { setAdding(false); loadOpen(); }}
+                />
             )}
         </div>
     );
