@@ -6,7 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import toast, { Toaster } from "react-hot-toast";
 import {
     FiArrowLeft, FiCopy, FiExternalLink, FiFileText, FiChevronLeft, FiChevronRight, FiRefreshCw,
-    FiCheckCircle, FiX, FiUpload,
+    FiCheckCircle, FiX, FiUpload, FiPrinter,
 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import {
@@ -20,6 +20,69 @@ const SYNC_BADGE: Record<string, { label: string; className: string }> = {
     synced: { label: "Sent to LMS", className: "bg-emerald-100 text-emerald-700" },
     pending: { label: "Sending", className: "bg-amber-100 text-amber-700" },
     failed: { label: "Retrying", className: "bg-rose-100 text-rose-700" },
+};
+
+// Once the LMS has it, show the admin's decision instead of "Sent to LMS"
+const lmsBadge = (a: Admission) => {
+    if (a.sync?.status !== "synced") return SYNC_BADGE[a.sync?.status] || SYNC_BADGE.pending;
+    const review = a.review?.status;
+    if (review === "rejected") return { label: "Rejected", className: "bg-rose-100 text-rose-700" };
+    if (a.payment?.status === "paid") {
+        return a.canPrintReceipt
+            ? { label: "Approved", className: "bg-emerald-100 text-emerald-700" }
+            : { label: "Awaiting approval", className: "bg-amber-100 text-amber-700" };
+    }
+    if (review === "approved") return { label: "Approved", className: "bg-emerald-100 text-emerald-700" };
+    return SYNC_BADGE.synced;
+};
+
+const escapeHtml = (value: unknown) =>
+    String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
+const formatDate = (value?: string | null) =>
+    value ? new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+// Printable payment receipt (the CSR prints it or saves it as PDF and sends
+// it to the student). Only offered once the admin has approved the payment.
+const printReceipt = (a: Admission) => {
+    const win = window.open("", "_blank");
+    if (!win) {
+        toast.error("Allow pop-ups for this site to print the receipt.");
+        return;
+    }
+    const rows: [string, string][] = [
+        ["Receipt No.", a.receiptId || "—"],
+        ["Student", a.fullName],
+        ["Course", a.course],
+        ["Fee paid", a.payment.amount != null ? `PKR ${a.payment.amount.toLocaleString("en-PK")}` : "—"],
+        ["Paid on", formatDate(a.payment.paidAt)],
+        ["Approved on", formatDate(a.review?.reviewedAt)],
+    ];
+    win.document.write(`<!doctype html>
+<html><head><meta charset="utf-8"><title>Payment Receipt - ${escapeHtml(a.fullName)}</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #0f172a; padding: 40px 16px; margin: 0; }
+  .card { max-width: 640px; margin: auto; border: 2px solid #2563eb; border-radius: 20px; padding: 32px; }
+  h1 { margin: 0; font-size: 26px; color: #2563eb; letter-spacing: 1px; }
+  .sub { margin: 4px 0 24px; font-size: 13px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 12px 0; border-bottom: 1px solid #e2e8f0; font-size: 15px; }
+  td:first-child { color: #64748b; width: 40%; }
+  td:last-child { font-weight: bold; text-align: right; }
+  .status { margin-top: 24px; padding: 12px; text-align: center; border-radius: 12px; background: #ecfdf5; color: #047857; font-weight: bold; }
+  .actions { text-align: center; margin-top: 24px; }
+  button { background: #2563eb; color: #fff; border: 0; padding: 10px 28px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+  @media print { .actions { display: none; } body { padding: 0; } }
+</style></head><body>
+<div class="card">
+  <h1>IDEOVERSITY</h1>
+  <p class="sub">Payment Receipt</p>
+  <table>${rows.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`).join("")}</table>
+  <div class="status">Payment received and approved</div>
+</div>
+<div class="actions"><button onclick="window.print()">Print / Save as PDF</button></div>
+</body></html>`);
+    win.document.close();
 };
 
 // CSR's own public admission link (to copy / share) and the forms people
@@ -141,7 +204,7 @@ export default function CsrAdmissionPage() {
                                     ) : admissions.length === 0 ? (
                                         <tr><td colSpan={8} className="text-center py-10 text-slate-400 font-bold">No forms submitted through your link yet.</td></tr>
                                     ) : admissions.map(a => {
-                                        const badge = SYNC_BADGE[a.sync?.status] || SYNC_BADGE.pending;
+                                        const badge = lmsBadge(a);
                                         return (
                                             <tr key={a._id} className="hover:bg-slate-50/60">
                                                 <td className="px-6 py-4 whitespace-nowrap text-slate-500 font-medium">
@@ -168,6 +231,11 @@ export default function CsrAdmissionPage() {
                                                             {a.payment.screenshotUrl && (
                                                                 <a href={a.payment.screenshotUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline">Screenshot</a>
                                                             )}
+                                                            {a.canPrintReceipt && (
+                                                                <button onClick={() => printReceipt(a)} className="w-fit inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-black hover:bg-blue-700 transition-all">
+                                                                    <FiPrinter /> Print receipt
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ) : a.receiptId ? (
                                                         <div className="flex flex-col gap-1.5">
@@ -179,7 +247,10 @@ export default function CsrAdmissionPage() {
                                                     ) : "—"}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${badge.className}`}>{badge.label}</span>
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase whitespace-nowrap ${badge.className}`}>{badge.label}</span>
+                                                    {a.sync?.status === "synced" && a.review?.status === "rejected" && a.review.notes && (
+                                                        <p className="mt-1.5 max-w-[220px] text-xs font-medium text-rose-600 whitespace-pre-line break-words">{a.review.notes}</p>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );

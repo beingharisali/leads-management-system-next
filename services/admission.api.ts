@@ -81,6 +81,10 @@ export type AdmissionSyncStatus = "pending" | "synced" | "failed";
 
 export type PaymentStatus = "pending" | "paid";
 
+// The LMS admin's decision ("" until the LMS has been asked). Notes are only
+// filled in for rejections.
+export type AdmissionReviewStatus = "" | "new" | "reviewed" | "approved" | "rejected";
+
 export interface Admission {
   _id: string;
   receiptId?: string;
@@ -98,6 +102,10 @@ export interface Admission {
   };
   createdAt: string;
   sync: { status: AdmissionSyncStatus; attempts: number; syncedAt: string | null };
+  // Missing when talking to an older backend
+  review?: { status: AdmissionReviewStatus; notes: string; reviewedAt: string | null };
+  // Paid and approved by the admin after the payment was recorded
+  canPrintReceipt?: boolean;
 }
 
 export interface MyAdmissionsResponse {
