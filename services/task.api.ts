@@ -105,6 +105,8 @@ export interface TaskDetail extends Omit<TaskSummary, "checklistDone" | "checkli
   history: HistoryEntry[];
   recurringTask?: string;
   startedAt?: string;
+  // The viewer can edit / cancel / review it (admin, or the Team Lead who assigned it)
+  canManage?: boolean;
 }
 
 export interface TaskListResponse {
@@ -114,6 +116,8 @@ export interface TaskListResponse {
 
 export interface TaskFilters {
   scope?: "open" | "history" | "all";
+  // Team Leads: "assigned" = tasks they gave to others
+  view?: "assigned";
   assignedTo?: string;
   category?: string;
   status?: string;

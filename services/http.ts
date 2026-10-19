@@ -18,6 +18,15 @@ http.interceptors.request.use(
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      // A staff member using admin pages they were given access to (the
+      // server only treats them as admin for tasks when this is sent)
+      if (
+        config.headers &&
+        localStorage.getItem("role") === "staff" &&
+        window.location.pathname.startsWith("/admin")
+      ) {
+        config.headers["X-Portal"] = "admin";
+      }
     }
 
     /* IMPORTANT FIX: 

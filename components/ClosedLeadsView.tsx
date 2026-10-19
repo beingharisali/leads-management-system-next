@@ -106,7 +106,7 @@ export default function ClosedLeadsView({ role, csrId, backHref, backLabel, titl
     if (loading) return <Loading />;
 
     return (
-        <ProtectedRoute role={role}>
+        <ProtectedRoute role={role} permission={role === "admin" ? "leads" : undefined}>
             <Toaster position="top-right" />
             <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
                 <div className="max-w-[1600px] mx-auto mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">

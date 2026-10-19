@@ -31,6 +31,7 @@ import Loading from "@/components/Loading";
 import ErrorMessage from "@/components/ErrorMessage";
 import Pagination from "@/components/buttons/Pagination";
 import { LEAD_STATUS_OPTIONS } from "@/utils/leadStatus";
+import { useAccess } from "@/utils/access";
 
 const LEADS_PAGE_SIZE = 20;
 
@@ -113,6 +114,14 @@ export default function AdminDashboardPage() {
     });
 
     const [isStatusChanging, setIsStatusChanging] = useState(false);
+    // New agent made a Team Lead right away
+    const [csrTeamLead, setCsrTeamLead] = useState(false);
+
+    // Staff members given Leads Console access use this page too; the
+    // admin sees everything (also while access is still loading)
+    const access = useAccess();
+    const allowed = (p: "tasks" | "accounts") => !access.ready || access.can(p);
+    const isRealAdmin = !access.ready || access.isAdmin;
 
     const statusOptions = LEAD_STATUS_OPTIONS;
 
@@ -227,7 +236,8 @@ export default function AdminDashboardPage() {
         e.preventDefault();
         const toastId = toast.loading("Registering Agent...");
         try {
-            await createCSR(csrForm);
+            await createCSR({ ...csrForm, ...(access.isAdmin && csrTeamLead ? { permissions: ["team_lead"] } : {}) });
+            setCsrTeamLead(false);
             toast.success("Agent Registered!", { id: toastId });
             toggleModal('csr', false);
             setCsrForm({ name: "", email: "", password: "", personalPhone: "", officialPhone: "" });
@@ -367,17 +377,26 @@ export default function AdminDashboardPage() {
                     <button onClick={() => toggleModal('lead', true)} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3.5 rounded-2xl font-bold text-sm hover:scale-[1.02] transition-all shadow-lg shadow-indigo-100">
                         <FiPlus /> Create Lead
                     </button>
-                    <button onClick={() => toggleModal('csr', true)} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3.5 rounded-2xl font-bold text-sm hover:scale-[1.02] transition-all">
-                        <FiUserPlus /> New Agent
-                    </button>
+                    {allowed("accounts") && (
+                        <button onClick={() => toggleModal('csr', true)} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3.5 rounded-2xl font-bold text-sm hover:scale-[1.02] transition-all">
+                            <FiUserPlus /> New Agent
+                        </button>
+                    )}
                     <label className="flex items-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-100 px-6 py-3.5 rounded-2xl font-bold text-sm cursor-pointer hover:bg-emerald-100">
                         <FiUploadCloud /> Excel Import
                         <input type="file" hidden accept=".xlsx, .xls" onChange={(e) => { setSelectedFile(e.target.files?.[0] || null); toggleModal('excel', true); }} />
                     </label>
-                    <Link href="/admin/tasks" className="flex items-center gap-2 bg-indigo-50 text-indigo-600 border border-indigo-100 px-6 py-3.5 rounded-2xl font-bold text-sm hover:bg-indigo-100">
-                        <FiCheckSquare /> Team Tasks
-                    </Link>
-                    <TaskNotificationBell taskBasePath="/admin/tasks" />
+                    {(allowed("tasks") || allowed("accounts")) && (
+                        <Link href="/admin/tasks" className="flex items-center gap-2 bg-indigo-50 text-indigo-600 border border-indigo-100 px-6 py-3.5 rounded-2xl font-bold text-sm hover:bg-indigo-100">
+                            <FiCheckSquare /> Team Tasks
+                        </Link>
+                    )}
+                    {!isRealAdmin && (
+                        <Link href="/staff/tasks" className="flex items-center gap-2 bg-white text-slate-700 border border-slate-200 px-6 py-3.5 rounded-2xl font-bold text-sm hover:bg-slate-50">
+                            My Tasks
+                        </Link>
+                    )}
+                    <TaskNotificationBell taskBasePath={allowed("tasks") ? "/admin/tasks" : "/staff/tasks"} />
                     <button onClick={() => { localStorage.clear(); window.location.href = "/login"; }} className="p-4 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all">
                         <FiLogOut size={20} />
                     </button>
@@ -408,7 +427,7 @@ export default function AdminDashboardPage() {
                         csrs={data?.csrPerformance || []}
                         selectedCSR={selectedCSR}
                         onSelect={setSelectedCSR}
-                        onToggleStatus={handleToggleCSRStatus}
+                        onToggleStatus={allowed("accounts") ? handleToggleCSRStatus : undefined}
                         onOpenDashboard={handleOpenAgentDashboard}
                     />
                 </aside>
@@ -432,9 +451,11 @@ export default function AdminDashboardPage() {
                                     <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                                     <input type="text" placeholder="Search..." className="w-full pl-11 pr-4 py-3 bg-white border rounded-2xl text-sm font-bold outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                 </div>
-                                <button onClick={handleDeleteAll} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all">
-                                    <FiTrash2 />
-                                </button>
+                                {isRealAdmin && (
+                                    <button onClick={handleDeleteAll} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all">
+                                        <FiTrash2 />
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -527,6 +548,15 @@ export default function AdminDashboardPage() {
                                 <input type="password" placeholder="Password" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.password} onChange={e => setCsrForm({ ...csrForm, password: e.target.value })} />
                                 <input type="tel" placeholder="Personal Number (e.g. 03001234567)" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.personalPhone} onChange={e => setCsrForm({ ...csrForm, personalPhone: e.target.value })} />
                                 <input type="tel" placeholder="Official / Allotted Number" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required value={csrForm.officialPhone} onChange={e => setCsrForm({ ...csrForm, officialPhone: e.target.value })} />
+                                {access.isAdmin && (
+                                    <label className="flex items-start gap-3 p-4 bg-slate-50 border rounded-2xl cursor-pointer">
+                                        <input type="checkbox" className="mt-1 accent-indigo-600" checked={csrTeamLead} onChange={e => setCsrTeamLead(e.target.checked)} />
+                                        <span>
+                                            <span className="block text-sm font-bold text-slate-700">Make Team Lead</span>
+                                            <span className="block text-xs text-slate-400">Can assign tasks to other team members and approve them</span>
+                                        </span>
+                                    </label>
+                                )}
                                 <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black">REGISTER AGENT</button>
                             </form>
                         </motion.div>
