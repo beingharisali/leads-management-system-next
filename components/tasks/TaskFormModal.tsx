@@ -35,7 +35,7 @@ export default function TaskFormModal({ workflows, team, task, defaultAssignee, 
     const [category, setCategory] = useState(task?.category || "general");
     const [priority, setPriority] = useState<TaskPriority>(task?.priority || "normal");
     const [assignees, setAssignees] = useState<string[]>(
-        task ? [task.assignedTo._id] : defaultAssignee ? [defaultAssignee] : []
+        task?.assignedTo ? [task.assignedTo._id] : defaultAssignee ? [defaultAssignee] : []
     );
     const [day, setDay] = useState(task?.scheduledFor || todayKey());
     const [dueDay, setDueDay] = useState(initialDue?.day || todayKey());

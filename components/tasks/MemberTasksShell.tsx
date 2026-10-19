@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Toaster } from "react-hot-toast";
-import { FiArrowLeft, FiCheckSquare, FiLogOut } from "react-icons/fi";
+import { FiArrowLeft, FiCheckSquare, FiGrid, FiLogOut, FiTrendingUp, FiUsers } from "react-icons/fi";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { logout } from "@/utils/decodeToken";
+import { useAccess } from "@/utils/access";
 import TaskNotificationBell from "./TaskNotificationBell";
 
 // Frame for a team member's task pages (staff portal, and the CSR's My Tasks).
@@ -32,6 +33,14 @@ export default function MemberTasksShell({
         }
     });
 
+    // Admin sections the admin gave this staff member
+    const access = useAccess();
+    const adminLinks = role !== "staff" ? [] : [
+        { show: access.permissions.includes("leads"), href: "/admin/dashboard", label: "Leads Console", icon: <FiTrendingUp /> },
+        { show: access.permissions.includes("tasks"), href: "/admin/tasks", label: "Team Tasks", icon: <FiGrid /> },
+        { show: access.permissions.includes("accounts"), href: "/admin/tasks/team", label: "Accounts", icon: <FiUsers /> },
+    ].filter((l) => l.show);
+
     return (
         <ProtectedRoute role={role}>
             <Toaster position="top-right" />
@@ -46,7 +55,12 @@ export default function MemberTasksShell({
                             <p className="text-slate-500 text-sm font-medium">{name ? `Signed in as ${name}` : "Your assigned work"}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        {adminLinks.map((l) => (
+                            <Link key={l.href} href={l.href} className="px-5 py-3 bg-white text-indigo-600 rounded-2xl font-bold text-sm flex items-center gap-2 shadow-sm border border-indigo-100 hover:bg-indigo-50">
+                                {l.icon} {l.label}
+                            </Link>
+                        ))}
                         {backLink && (
                             <Link href={backLink.href} className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold text-sm flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50">
                                 <FiArrowLeft /> {backLink.label}

@@ -14,7 +14,8 @@ const FIELDS: { key: PhoneField; label: string; icon: React.ReactNode; accent: s
 
 // Admin-only: the CSR's allotted company number (and personal number),
 // each editable in place so the admin can re-allot a number any time.
-export default function AgentNumbersCard({ csrId }: { csrId: string }) {
+// `canEdit`: false for staff who can view CSR dashboards but not manage accounts
+export default function AgentNumbersCard({ csrId, canEdit = true }: { csrId: string; canEdit?: boolean }) {
     const [numbers, setNumbers] = useState<Record<PhoneField, string>>({ officialPhone: "", personalPhone: "" });
     const [loaded, setLoaded] = useState(false);
     const [editing, setEditing] = useState<PhoneField | null>(null);
@@ -90,7 +91,7 @@ export default function AgentNumbersCard({ csrId }: { csrId: string }) {
                                 <FiX size={16} />
                             </button>
                         </div>
-                    ) : (
+                    ) : canEdit && (
                         <button
                             onClick={() => startEdit(key)}
                             disabled={editing !== null}

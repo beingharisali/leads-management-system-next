@@ -24,7 +24,8 @@ interface Props {
     csrs: CSR[];
     selectedCSR: string | null;
     onSelect: (csrId: string | null) => void;
-    onToggleStatus: (csrId: string, currentStatus: string) => void;
+    // Omitted for people who can't change account status (no button shown)
+    onToggleStatus?: (csrId: string, currentStatus: string) => void;
     // Navigates straight to that agent's own dashboard (no separate login
     // needed) - fired when an agent card is clicked.
     onOpenDashboard: (csrId: string, name: string) => void;
@@ -158,7 +159,7 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                                         </div>
 
                                         {/* Status Toggle Button: Fixed Event Handling */}
-                                        <button
+                                        {onToggleStatus && <button
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation(); // Row selection ko rokne ke liye
@@ -171,7 +172,7 @@ export default function CSRSidebar({ csrs = [], selectedCSR, onSelect, onToggleS
                                                 }`}
                                         >
                                             <FiPower size={14} className="stroke-[3px]" />
-                                        </button>
+                                        </button>}
                                     </div>
 
                                     {/* Mini Stats Grid */}

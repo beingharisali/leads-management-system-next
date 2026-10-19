@@ -1,6 +1,9 @@
 import http, { getErrorMessage } from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
+// Extra access the admin can give (CSRs: team_lead only)
+export type Permission = "team_lead" | "leads" | "tasks" | "accounts";
+
 export interface User {
   _id: string;
   name: string;
@@ -9,6 +12,38 @@ export interface User {
   status: "active" | "inactive";
   personalPhone?: string;
   officialPhone?: string;
+  permissions?: Permission[];
+}
+
+// A CSR or staff account as listed on the Team page
+export interface Account {
+  _id: string;
+  name: string;
+  email: string;
+  role: "csr" | "staff";
+  status: "active" | "inactive";
+  permissions: Permission[];
+  personalPhone?: string;
+  officialPhone?: string;
+  createdAt?: string;
+}
+
+export interface DeleteCheck {
+  _id: string;
+  name: string;
+  role: "csr" | "staff";
+  leads: number;
+  admissions: number;
+  openTasks: number;
+  repeatingTasks: number;
+}
+
+export interface DeleteResult {
+  leadsMoved: number;
+  admissionsMoved: number;
+  tasksCancelled: number;
+  repeatingStopped: number;
+  movedTo: { _id: string; name: string } | null;
 }
 
 export interface AuthResponse {
@@ -57,7 +92,7 @@ export const login = async (email: string, password: string): Promise<AuthRespon
 };
 
 // 3. Create CSR (Agent Registration)
-export const createCSR = async (data: { name: string; email: string; password: string; role?: string; personalPhone?: string; officialPhone?: string }): Promise<AuthResponse> => {
+export const createCSR = async (data: { name: string; email: string; password: string; role?: string; personalPhone?: string; officialPhone?: string; permissions?: Permission[] }): Promise<AuthResponse> => {
   try {
     const payload = { ...data, role: data.role || "csr" };
     const res = await http.post("/auth/register", payload, getAuthHeaders());
@@ -127,5 +162,48 @@ export const updateAgentPhones = async (
     return res.data.data;
   } catch (err: any) {
     throw new Error(getErrorMessage(err, "Failed to update number"));
+  }
+};
+
+/* ===================== TEAM ACCOUNTS ===================== */
+
+// 8. Every CSR + staff account with its access
+export const getAccounts = async (): Promise<Account[]> => {
+  try {
+    const res = await http.get("/auth/accounts");
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to load accounts"));
+  }
+};
+
+// 9. Team Lead / feature access (admin only)
+export const updateAccess = async (id: string, permissions: Permission[]): Promise<Account> => {
+  try {
+    const res = await http.patch(`/auth/accounts/${id}/access`, { permissions });
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to update access"));
+  }
+};
+
+// 10. What deleting an account affects (admin only)
+export const getDeleteCheck = async (id: string): Promise<DeleteCheck> => {
+  try {
+    const res = await http.get(`/auth/accounts/${id}/delete-check`);
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to check the account"));
+  }
+};
+
+// 11. Permanently delete a CSR / staff account (admin only).
+// `reassignTo`: another CSR who gets the deleted CSR's leads.
+export const deleteAccount = async (id: string, reassignTo?: string): Promise<DeleteResult> => {
+  try {
+    const res = await http.delete(`/auth/accounts/${id}`, { params: reassignTo ? { reassignTo } : {} });
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to delete the account"));
   }
 };

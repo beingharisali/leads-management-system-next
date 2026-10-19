@@ -78,6 +78,12 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
         if (mode === "admin") getTeam().then(setTeam).catch(() => { });
     }, [load, mode]);
 
+    // A Team Lead looking at a task they assigned can edit it too
+    const leadManages = mode === "member" && Boolean(task?.canManage);
+    useEffect(() => {
+        if (leadManages) getTeam().then(setTeam).catch(() => { });
+    }, [leadManages]);
+
     const run = async (action: () => Promise<unknown>, success: string) => {
         setBusy(true);
         try {
@@ -103,12 +109,18 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
     }
     if (!task) return <Loading />;
 
-    const isMember = mode === "member";
+    // Member mode is either the assignee doing the work, or the Team Lead who assigned it
+    const isMember = mode === "member" && !leadManages;
+    const manages = mode === "admin" || leadManages;
+    // Assigned by a Team Lead (not the admin, not added by the member themselves)
+    const byLead = Boolean(task.createdBy?.role && task.createdBy.role !== "admin" && task.createdBy._id !== task.assignedTo?._id);
+    const approver = byLead ? `${task.createdBy?.name} (Team Lead)` : "the admin";
     const actionable = ["todo", "in_progress", "blocked"].includes(task.status);
     const closed = task.status === "completed" || task.status === "cancelled";
     const pending = task.status === "submitted" ? task.submissions[task.submissions.length - 1] : null;
     const doneSteps = task.checklist.filter((i) => i.done).length;
-    const canTick = actionable;
+    // Only the assignee (or the admin) ticks steps
+    const canTick = actionable && !leadManages;
 
     const addFiles = (list: FileList | null) => {
         if (!list) return;
@@ -160,7 +172,7 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
 
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                     <h1 className="text-2xl font-black text-slate-900">{task.title}</h1>
-                    {mode === "admin" && !closed && (
+                    {manages && !closed && (
                         <div className="flex gap-2 shrink-0">
                             <button onClick={() => setEditing(true)} className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-black uppercase flex items-center gap-2 hover:bg-slate-200"><FiEdit3 /> Edit</button>
                             <button onClick={cancel} disabled={busy} className="px-4 py-2.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-black uppercase flex items-center gap-2 hover:bg-rose-100"><FiSlash /> Cancel task</button>
@@ -180,7 +192,7 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
                         sub={!closed && task.status !== "submitted" ? deadlineLabel(task.dueAt) : undefined}
                         danger={task.isOverdue}
                     />
-                    <Info icon={<FiCheckCircle />} label="Approval" value={task.requiresApproval ? "Admin approves" : "Not needed"} />
+                    <Info icon={<FiCheckCircle />} label="Approval" value={task.requiresApproval ? (byLead ? `${task.createdBy?.name} approves` : "Admin approves") : "Not needed"} />
                 </div>
 
                 {task.status === "blocked" && task.blockedReason && (
@@ -256,7 +268,7 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
                     )}
 
                     {/* Admin review */}
-                    {mode === "admin" && pending && (
+                    {manages && pending && (
                         <Section title="Review submission" highlight>
                             <SubmissionCard submission={pending} />
                             <textarea rows={2} maxLength={2000} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="Feedback (required when rejecting)" className="w-full mt-4 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-sm outline-none" />
@@ -269,7 +281,7 @@ export default function TaskDetailView({ taskId, mode, backHref }: { taskId: str
 
                     {isMember && task.status === "submitted" && (
                         <div className="p-5 rounded-3xl bg-purple-50 border border-purple-100 text-purple-700 text-sm font-bold">
-                            📨 Submitted. Waiting for the admin to approve it.
+                            📨 Submitted. Waiting for {approver} to approve it.
                         </div>
                     )}
 

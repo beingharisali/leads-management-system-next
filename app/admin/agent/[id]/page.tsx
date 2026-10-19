@@ -14,6 +14,7 @@ import {
 import SummaryCard from "@/components/SummaryCard";
 import CsrActivityCard from "@/components/CsrActivityCard";
 import AgentNumbersCard from "@/components/AgentNumbersCard";
+import { useAccess } from "@/utils/access";
 import Loading from "@/components/Loading";
 import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -54,6 +55,7 @@ interface Lead {
 // portal activity, and importing/creating leads straight for this agent.
 export default function AdminAgentDashboard() {
     const router = useRouter();
+    const access = useAccess();
     const params = useParams<{ id: string }>();
     const searchParams = useSearchParams();
     const csrId = params.id;
@@ -366,7 +368,7 @@ export default function AdminAgentDashboard() {
     if (loading) return <Loading />;
 
     return (
-        <ProtectedRoute role="admin">
+        <ProtectedRoute role="admin" permission="leads">
             <Toaster position="top-right" />
             <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
 
@@ -419,7 +421,7 @@ export default function AdminAgentDashboard() {
                         </div>
                     </div>
 
-                    <AgentNumbersCard csrId={csrId} />
+                    <AgentNumbersCard csrId={csrId} canEdit={access.can("accounts")} />
 
                     <CsrActivityCard csrId={csrId} />
 
