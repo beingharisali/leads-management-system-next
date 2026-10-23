@@ -12,6 +12,7 @@ import {
     bulkInsertLeads
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
+import FollowUpDateModal from "@/components/FollowUpDateModal";
 import CsrActivityCard from "@/components/CsrActivityCard";
 import AgentNumbersCard from "@/components/AgentNumbersCard";
 import { useAccess } from "@/utils/access";
@@ -20,7 +21,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass, LEAD_STATUS_OPTIONS, isUrgentStatus, pinUrgentFirst, statusBadgeClass } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass, LEAD_STATUS_OPTIONS, isFollowUpStatus, isUrgentStatus, pinUrgentFirst, statusBadgeClass } from "@/utils/leadStatus";
 import FollowUpBell from "@/components/FollowUpBell";
 import UrgentLeadsBanner from "@/components/UrgentLeadsBanner";
 import { useUrgentLeadsPolling, useOnUrgentChange } from "@/hooks/useUrgentLeads";
@@ -67,6 +68,8 @@ export default function AdminAgentDashboard() {
     const deferredSearch = useDeferredValue(searchTerm);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    // Lead waiting for a date before it can be switched to Follow Up
+    const [followUpLead, setFollowUpLead] = useState<Lead | null>(null);
 
     // --- Pagination States ---
     const [currentPage, setCurrentPage] = useState(1);
@@ -111,14 +114,14 @@ export default function AdminAgentDashboard() {
     const urgentState = useUrgentLeadsPolling(csrId);
     useOnUrgentChange(urgentState.signature, urgentState.loaded, () => fetchData(true));
 
-    // Follow-up reminders: Interested leads whose CSR-picked follow-up date
+    // Follow-up reminders: Interested / Follow Up leads whose CSR-picked follow-up date
     // is today (or already passed without being actioned). Not Pick/Busy
     // leads roll to the next day automatically, so they never show here.
     const dueFollowUps = useMemo(() => {
         const todayKey = localDateKey(new Date());
         return leads
             .filter(l =>
-                l.status.toLowerCase() === "interested" &&
+                canSetFollowUp(l.status) &&
                 l.followUpDate &&
                 localDateKey(l.followUpDate) <= todayKey
             )
@@ -290,6 +293,7 @@ export default function AdminAgentDashboard() {
             newLeads: getCount("new"),
             notPick: getCount("not pick"),
             interested: getCount("interested"),
+            followUp: getCount("follow up"),
             busy: getCount("busy"),
         };
     }, [filteredLeads]);
@@ -370,6 +374,16 @@ export default function AdminAgentDashboard() {
     return (
         <ProtectedRoute role="admin" permission="leads">
             <Toaster position="top-right" />
+            {followUpLead && (
+                <FollowUpDateModal
+                    leadName={followUpLead.name}
+                    onCancel={() => setFollowUpLead(null)}
+                    onConfirm={(followUpDate) => {
+                        handleUpdate(followUpLead._id, { status: "follow up", followUpDate });
+                        setFollowUpLead(null);
+                    }}
+                />
+            )}
             <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
 
                 {/* Header Section */}
@@ -452,6 +466,7 @@ export default function AdminAgentDashboard() {
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} percentage={percentOfTotal(metrics.newLeads)} icon={<FiPlus />} color="blue" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} percentage={percentOfTotal(metrics.notPick)} icon={<FiPhone />} color="orange" />
                     <SummaryCard title="Interested" value={metrics.interested.toString()} percentage={percentOfTotal(metrics.interested)} icon={<FiUserCheck />} color="green" />
+                    <SummaryCard title="Follow Up" value={metrics.followUp.toString()} percentage={percentOfTotal(metrics.followUp)} icon={<FiCalendar />} color="slate" />
                     <SummaryCard title="Busy" value={metrics.busy.toString()} percentage={percentOfTotal(metrics.busy)} icon={<FiClock />} color="indigo" />
                     <SummaryCard title="Open Leads Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
@@ -537,7 +552,9 @@ export default function AdminAgentDashboard() {
                                         <td className="px-6 py-4">
                                             <select
                                                 value={lead.status.toLowerCase()}
-                                                onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
+                                                onChange={(e) => isFollowUpStatus(e.target.value)
+                                                    ? setFollowUpLead(lead)
+                                                    : handleUpdate(lead._id, { status: e.target.value })}
                                                 className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 ${statusBadgeClass(lead.status)}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
@@ -576,7 +593,7 @@ export default function AdminAgentDashboard() {
                                                         ? "Urgent leads are due immediately"
                                                         : ["not pick", "busy"].includes(lead.status.toLowerCase())
                                                             ? "Automatically moved to the next day"
-                                                            : "Set status to Interested to schedule a follow-up"}
+                                                            : "Set status to Interested or Follow Up to schedule a follow-up"}
                                                 >
                                                     -
                                                 </span>
