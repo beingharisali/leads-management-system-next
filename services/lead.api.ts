@@ -239,6 +239,35 @@ export const updateLead = async (id: string, data: Partial<LeadPayload>): Promis
   }
 };
 
+// One entry of a lead's add-only remark history. `legacy` marks the remark
+// saved before history existed (no time recorded); no `byName` means it
+// was added automatically (e.g. by the admission form).
+export interface RemarkEntry {
+  text: string;
+  at: string | null;
+  legacy: boolean;
+  byName: string | null;
+  byRole: string | null;
+}
+
+export const addLeadRemark = async (id: string, text: string): Promise<Lead> => {
+  try {
+    const res = await http.post<ApiResponse<Lead>>(`/lead/${id}/remarks`, { text });
+    return res.data.data;
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to add remark"));
+  }
+};
+
+export const getLeadRemarkHistory = async (id: string): Promise<RemarkEntry[]> => {
+  try {
+    const res = await http.get<ApiResponse<RemarkEntry[]>>(`/lead/${id}/remarks`);
+    return res.data.data || [];
+  } catch (err: any) {
+    throw new Error(getErrorMessage(err, "Failed to load remarks"));
+  }
+};
+
 export const deleteLead = async (id: string): Promise<void> => {
   try {
     await http.delete(`/lead/${id}`);

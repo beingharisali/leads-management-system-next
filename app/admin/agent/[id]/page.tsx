@@ -13,6 +13,7 @@ import {
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
 import FollowUpDateModal from "@/components/FollowUpDateModal";
+import LeadRemarkCell from "@/components/LeadRemarkCell";
 import CsrActivityCard from "@/components/CsrActivityCard";
 import AgentNumbersCard from "@/components/AgentNumbersCard";
 import { useAccess } from "@/utils/access";
@@ -561,11 +562,9 @@ export default function AdminAgentDashboard() {
                                             </select>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <input
-                                                defaultValue={lead.remarks}
-                                                onBlur={(e) => e.target.value !== (lead.remarks || "") && handleUpdate(lead._id, { remarks: e.target.value })}
-                                                className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm w-full"
-                                                placeholder="Add note..."
+                                            <LeadRemarkCell
+                                                lead={lead}
+                                                onAdded={(remarks) => setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, remarks } : l))}
                                             />
                                         </td>
 

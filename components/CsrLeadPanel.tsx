@@ -9,6 +9,7 @@ import {
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import { isUrgentStatus } from "@/utils/leadStatus";
+import RemarkHistoryModal from "@/components/RemarkHistoryModal";
 
 // --- Types ---
 interface Lead {
@@ -51,6 +52,8 @@ export default function CSRLeadsPanel({
     onStatsUpdate,
 }: Props) {
     const [processingId, setProcessingId] = useState<string | null>(null);
+    // Lead whose full remark history is open
+    const [historyLead, setHistoryLead] = useState<{ _id: string; name: string } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [period, setPeriod] = useState<FilterPeriod>("all");
     const [customRange, setCustomRange] = useState({ start: "", end: "" });
@@ -148,6 +151,9 @@ export default function CSRLeadsPanel({
 
     return (
         <div className="space-y-6">
+            {historyLead && (
+                <RemarkHistoryModal leadId={historyLead._id} leadName={historyLead.name} onClose={() => setHistoryLead(null)} />
+            )}
             <div className="bg-white rounded-[2.5rem] p-6 lg:p-8 shadow-sm border border-slate-100 min-h-[600px] flex flex-col">
 
                 {/* --- Toolbar: Search & Filters --- */}
@@ -302,7 +308,11 @@ export default function CSRLeadsPanel({
                                                     ) : (
                                                         <div className="space-y-1">
                                                             <span className="text-[9px] font-black uppercase text-blue-600 tracking-[0.1em]">{lead.status || 'Active'}</span>
-                                                            <p className="text-[9px] text-slate-400 italic line-clamp-1 max-w-[180px]">{lead.remarks || "No notes..."}</p>
+                                                            {lead.remarks ? (
+                                                                <button type="button" onClick={() => setHistoryLead(lead)} title="See all remarks with their time" className="block text-left text-[9px] text-slate-400 italic line-clamp-1 max-w-[180px] hover:text-blue-600 hover:underline">{lead.remarks}</button>
+                                                            ) : (
+                                                                <p className="text-[9px] text-slate-400 italic line-clamp-1 max-w-[180px]">No notes...</p>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </td>

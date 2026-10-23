@@ -13,6 +13,7 @@ import {
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
 import FollowUpDateModal from "@/components/FollowUpDateModal";
+import LeadRemarkCell from "@/components/LeadRemarkCell";
 import Loading from "@/components/Loading";
 import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
@@ -625,11 +626,9 @@ export default function CSRDashboard() {
                                             </select>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <input
-                                                defaultValue={lead.remarks}
-                                                onBlur={(e) => e.target.value !== (lead.remarks || "") && handleUpdate(lead._id, { remarks: e.target.value })}
-                                                className="bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-sm w-full"
-                                                placeholder="Add note..."
+                                            <LeadRemarkCell
+                                                lead={lead}
+                                                onAdded={(remarks) => setLeads(prev => prev.map(l => l._id === lead._id ? { ...l, remarks } : l))}
                                             />
                                         </td>
 

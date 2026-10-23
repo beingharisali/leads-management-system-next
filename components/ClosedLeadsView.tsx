@@ -8,6 +8,7 @@ import Loading from "@/components/Loading";
 import { getLeadsByRole, Lead } from "@/services/lead.api";
 import { getUserId } from "@/utils/decodeToken";
 import { isClosedStatus } from "@/utils/leadStatus";
+import RemarkHistoryModal from "@/components/RemarkHistoryModal";
 import toast, { Toaster } from "react-hot-toast";
 import {
     FiArrowLeft, FiCheckCircle, FiSlash, FiPhoneOff, FiArchive, FiDollarSign, FiSearch,
@@ -52,6 +53,8 @@ interface ClosedLeadsViewProps {
 // the CSR's own page and the admin's view of a single agent.
 export default function ClosedLeadsView({ role, csrId, backHref, backLabel, title = "Closed Leads" }: ClosedLeadsViewProps) {
     const [leads, setLeads] = useState<Lead[]>([]);
+    // Lead whose full remark history is open
+    const [historyLead, setHistoryLead] = useState<Lead | null>(null);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<ClosedTab>("all");
     const [searchTerm, setSearchTerm] = useState("");
@@ -108,6 +111,9 @@ export default function ClosedLeadsView({ role, csrId, backHref, backLabel, titl
     return (
         <ProtectedRoute role={role} permission={role === "admin" ? "leads" : undefined}>
             <Toaster position="top-right" />
+            {historyLead && (
+                <RemarkHistoryModal leadId={historyLead._id} leadName={historyLead.name} onClose={() => setHistoryLead(null)} />
+            )}
             <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
                 <div className="max-w-[1600px] mx-auto mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                     <div>
@@ -188,7 +194,11 @@ export default function ClosedLeadsView({ role, csrId, backHref, backLabel, titl
                                                     {bucket}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-slate-600">{lead.remarks || "-"}</td>
+                                            <td className="px-6 py-4 text-sm text-slate-600">
+                                                {lead.remarks ? (
+                                                    <button type="button" onClick={() => setHistoryLead(lead)} title="See all remarks with their time" className="text-left hover:text-blue-600 hover:underline">{lead.remarks}</button>
+                                                ) : "-"}
+                                            </td>
                                             <td className="px-6 py-4 text-center font-bold text-green-600">{lead.saleAmount ? lead.saleAmount : "-"}</td>
                                         </tr>
                                     );
