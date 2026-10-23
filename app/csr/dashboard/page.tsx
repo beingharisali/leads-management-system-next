@@ -12,6 +12,7 @@ import {
     bulkInsertLeads
 } from "@/services/lead.api";
 import SummaryCard from "@/components/SummaryCard";
+import FollowUpDateModal from "@/components/FollowUpDateModal";
 import Loading from "@/components/Loading";
 import { getUserRole, getUserId, logout } from "@/utils/decodeToken";
 import toast, { Toaster } from "react-hot-toast";
@@ -19,7 +20,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ColumnFilterDropdown from "@/components/filters/ColumnFilterDropdown";
 import MyActivityTimer from "@/components/MyActivityTimer";
 import { monthKeyOf, monthOptionsFrom, textOptionsFrom } from "@/utils/leadFilterOptions";
-import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass, LEAD_STATUS_OPTIONS, isUrgentStatus, pinUrgentFirst, statusBadgeClass } from "@/utils/leadStatus";
+import { isClosedStatus, canSetFollowUp, localDateKey, leadAgeDays, leadAgeLabel, leadAgeClass, LEAD_STATUS_OPTIONS, isFollowUpStatus, isUrgentStatus, pinUrgentFirst, statusBadgeClass } from "@/utils/leadStatus";
 import FollowUpBell from "@/components/FollowUpBell";
 import TaskNotificationBell from "@/components/tasks/TaskNotificationBell";
 import UrgentLeadsBanner from "@/components/UrgentLeadsBanner";
@@ -58,6 +59,8 @@ export default function CSRDashboard() {
     const deferredSearch = useDeferredValue(searchTerm);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    // Lead waiting for a date before it can be switched to Follow Up
+    const [followUpLead, setFollowUpLead] = useState<Lead | null>(null);
     const notifiedLeadsRef = useRef<Record<string, boolean>>({});
 
     // --- Pagination States ---
@@ -106,14 +109,14 @@ export default function CSRDashboard() {
     const urgentState = useUrgentLeads();
     useOnUrgentChange(urgentState.signature, urgentState.loaded, () => fetchData(true));
 
-    // Follow-up reminders: Interested leads whose CSR-picked follow-up date
+    // Follow-up reminders: Interested / Follow Up leads whose CSR-picked follow-up date
     // is today (or already passed without being actioned). Not Pick/Busy
     // leads roll to the next day automatically, so they never show here.
     const dueFollowUps = useMemo(() => {
         const todayKey = localDateKey(new Date());
         return leads
             .filter(l =>
-                l.status.toLowerCase() === "interested" &&
+                canSetFollowUp(l.status) &&
                 l.followUpDate &&
                 localDateKey(l.followUpDate) <= todayKey
             )
@@ -131,7 +134,7 @@ export default function CSRDashboard() {
         toast(
             fresh.length === 1
                 ? `Follow-up due: call ${fresh[0].name} (${fresh[0].phone})`
-                : `${fresh.length} interested leads need a follow-up call today`,
+                : `${fresh.length} leads need a follow-up call today`,
             {
                 icon: '🔔',
                 duration: 8000,
@@ -307,6 +310,7 @@ export default function CSRDashboard() {
             newLeads: getCount("new"),
             notPick: getCount("not pick"),
             interested: getCount("interested"),
+            followUp: getCount("follow up"),
             busy: getCount("busy"),
         };
     }, [filteredLeads]);
@@ -388,6 +392,16 @@ export default function CSRDashboard() {
     return (
         <ProtectedRoute role="csr">
             <Toaster position="top-right" />
+            {followUpLead && (
+                <FollowUpDateModal
+                    leadName={followUpLead.name}
+                    onCancel={() => setFollowUpLead(null)}
+                    onConfirm={(followUpDate) => {
+                        handleUpdate(followUpLead._id, { status: "follow up", followUpDate });
+                        setFollowUpLead(null);
+                    }}
+                />
+            )}
             <div className="min-h-screen bg-[#F4F7FE] p-4 lg:p-10">
 
                 {/* Header Section */}
@@ -459,6 +473,7 @@ export default function CSRDashboard() {
                     <SummaryCard title="New Leads" value={metrics.newLeads.toString()} percentage={percentOfTotal(metrics.newLeads)} icon={<FiPlus />} color="blue" />
                     <SummaryCard title="Not Picked" value={metrics.notPick.toString()} percentage={percentOfTotal(metrics.notPick)} icon={<FiPhone />} color="orange" />
                     <SummaryCard title="Interested" value={metrics.interested.toString()} percentage={percentOfTotal(metrics.interested)} icon={<FiUserCheck />} color="green" />
+                    <SummaryCard title="Follow Up" value={metrics.followUp.toString()} percentage={percentOfTotal(metrics.followUp)} icon={<FiCalendar />} color="slate" />
                     <SummaryCard title="Busy" value={metrics.busy.toString()} percentage={percentOfTotal(metrics.busy)} icon={<FiClock />} color="indigo" />
                     <SummaryCard title="Open Leads Shown" value={metrics.total.toString()} icon={<FiFilter />} color="purple" />
                 </div>
@@ -512,14 +527,47 @@ export default function CSRDashboard() {
                                             })()}
                                         </td>
                                         <td className="px-6 py-4 font-bold text-slate-800">
-                                            {lead.name}
+                                            {/* Blank / 1-letter names are rejected (server needs 2+) - it just snaps back */}
+                                            <input
+                                                key={lead.name}
+                                                defaultValue={lead.name}
+                                                title="Correct this lead's name"
+                                                onBlur={(e) => {
+                                                    const name = e.target.value.trim();
+                                                    if (name.length < 2) { e.target.value = lead.name; return; }
+                                                    if (name !== lead.name) handleUpdate(lead._id, { name });
+                                                }}
+                                                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                                                className="bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 outline-none min-w-[120px]"
+                                                placeholder="Name"
+                                            />
                                             {isUrgentStatus(lead.status) && (
                                                 <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider align-middle">
                                                     <FiAlertTriangle size={10} /> Urgent
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-blue-600 font-semibold">{lead.phone}</td>
+                                        <td className="px-6 py-4 text-sm text-blue-600 font-semibold">
+                                            {/* Cleaned the same way the server does; under 10 digits snaps back */}
+                                            <input
+                                                key={lead.phone}
+                                                defaultValue={lead.phone}
+                                                title="Correct this lead's phone number"
+                                                onBlur={(e) => {
+                                                    const phone = e.target.value.replace(/[^\d+]/g, "");
+                                                    if (phone.replace(/\D/g, "").length < 10) {
+                                                        if (e.target.value.trim() !== lead.phone) toast.error("Phone number must have at least 10 digits");
+                                                        e.target.value = lead.phone;
+                                                        return;
+                                                    }
+                                                    e.target.value = phone;
+                                                    if (phone !== lead.phone) handleUpdate(lead._id, { phone });
+                                                }}
+                                                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                                                className="bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 outline-none w-full min-w-[110px]"
+                                                placeholder="Phone"
+                                            />
+                                        </td>
                                         <td className="px-6 py-4 text-sm font-semibold text-slate-600">
                                             {/* Blank is rejected (course is required) - it just snaps back */}
                                             <input
@@ -538,13 +586,39 @@ export default function CSRDashboard() {
                                             />
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{lead.source || 'N/A'}</div>
-                                            <div className="text-xs font-semibold text-slate-600">{lead.city || 'No City'}</div>
+                                            <input
+                                                key={lead.source || ""}
+                                                list="source-suggestions"
+                                                defaultValue={lead.source || ""}
+                                                title="Correct this lead's source"
+                                                onBlur={(e) => {
+                                                    const source = e.target.value.trim();
+                                                    if (source !== (lead.source || "")) handleUpdate(lead._id, { source });
+                                                }}
+                                                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                                                className="block text-[10px] font-bold text-slate-400 uppercase tracking-tight bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 outline-none w-full min-w-[100px]"
+                                                placeholder="N/A"
+                                            />
+                                            <input
+                                                key={lead.city || ""}
+                                                list="city-suggestions"
+                                                defaultValue={lead.city || ""}
+                                                title="Correct this lead's city"
+                                                onBlur={(e) => {
+                                                    const city = e.target.value.trim();
+                                                    if (city !== (lead.city || "")) handleUpdate(lead._id, { city });
+                                                }}
+                                                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                                                className="block text-xs font-semibold text-slate-600 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 outline-none w-full min-w-[100px]"
+                                                placeholder="No City"
+                                            />
                                         </td>
                                         <td className="px-6 py-4">
                                             <select
                                                 value={lead.status.toLowerCase()}
-                                                onChange={(e) => handleUpdate(lead._id, { status: e.target.value })}
+                                                onChange={(e) => isFollowUpStatus(e.target.value)
+                                                    ? setFollowUpLead(lead)
+                                                    : handleUpdate(lead._id, { status: e.target.value })}
                                                 className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl border-none ring-1 ring-slate-200 ${statusBadgeClass(lead.status)}`}
                                             >
                                                 {statusOptions.map(opt => <option key={opt} value={opt}>{opt.toUpperCase()}</option>)}
@@ -583,7 +657,7 @@ export default function CSRDashboard() {
                                                         ? "Urgent leads are due immediately"
                                                         : ["not pick", "busy"].includes(lead.status.toLowerCase())
                                                             ? "Automatically moved to the next day"
-                                                            : "Set status to Interested to schedule a follow-up"}
+                                                            : "Set status to Interested or Follow Up to schedule a follow-up"}
                                                 >
                                                     -
                                                 </span>
@@ -598,6 +672,12 @@ export default function CSRDashboard() {
                         </table>
                         <datalist id="course-suggestions">
                             {courseOptions.map(o => <option key={o.value} value={o.label} />)}
+                        </datalist>
+                        <datalist id="city-suggestions">
+                            {cityOptions.map(o => <option key={o.value} value={o.label} />)}
+                        </datalist>
+                        <datalist id="source-suggestions">
+                            {sourceOptions.map(o => <option key={o.value} value={o.label} />)}
                         </datalist>
                     </div>
 

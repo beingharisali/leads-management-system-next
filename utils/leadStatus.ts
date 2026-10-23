@@ -6,11 +6,18 @@ export const CLOSED_STATUSES = ["paid", "sale", "not interested", "converted", "
 
 // The only statuses an agent may pin a specific follow-up date on. Not
 // Pick/Busy are always rolled to the next day by the server instead.
-export const FOLLOW_UP_STATUSES = ["interested"];
+export const FOLLOW_UP_STATUSES = ["interested", "follow up"];
+
+// Picking Follow Up asks for the date first - the status is only saved
+// together with it (the server rejects it without one).
+export const FOLLOW_UP_STATUS = "follow up";
+
+export const isFollowUpStatus = (status?: string) =>
+    (status || "").toLowerCase().trim() === FOLLOW_UP_STATUS;
 
 // Every status an agent/admin can pick, in dropdown order. Mirrors the
 // enum in server/models/leads.js.
-export const LEAD_STATUS_OPTIONS = ["urgent", "new", "not pick", "interested", "paid", "not interested", "busy", "wrong number"];
+export const LEAD_STATUS_OPTIONS = ["urgent", "new", "not pick", "interested", "follow up", "paid", "not interested", "busy", "wrong number"];
 
 // Urgent leads are pinned to the top of every list and trigger a
 // "call now" alert in the CSR's portal.

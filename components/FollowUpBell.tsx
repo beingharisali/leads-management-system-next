@@ -12,7 +12,7 @@ export interface DueFollowUp {
     isOverdue: boolean;
 }
 
-// Bell + dropdown of Interested leads whose follow-up is due today or
+// Bell + dropdown of Interested / Follow Up leads whose follow-up is due today or
 // overdue. Shared by the CSR dashboard and the admin's view of a CSR.
 export default function FollowUpBell({
     dueFollowUps,
@@ -44,7 +44,7 @@ export default function FollowUpBell({
                     <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-100">
                             <p className="text-sm font-black text-slate-800">Follow-ups due</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Interested leads scheduled for today</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Follow-ups scheduled for today</p>
                         </div>
                         <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
                             {dueFollowUps.length === 0 ? (
