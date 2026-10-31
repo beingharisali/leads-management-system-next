@@ -18,6 +18,15 @@ const TYPE_ICONS: Record<AppNotification["type"], string> = {
     task_blocked: "🚧",
     task_cancelled: "✖️",
     task_self_created: "📝",
+    complaint_filed: "📣",
+    complaint_replied: "💬",
+};
+
+// A new complaint goes to the admin's complaints page; a reply to the
+// complainant's own list in their portal.
+const complaintPath = (n: AppNotification) => {
+    if (n.type === "complaint_filed") return `/admin/complaints?open=${n.complaint}`;
+    return localStorage.getItem("role") === "csr" ? "/csr/complaints" : "/staff/complaints";
 };
 
 // Task notifications (overdue deadlines, submissions, approvals...). Polls
@@ -80,6 +89,7 @@ export default function TaskNotificationBell({ taskBasePath }: { taskBasePath: s
             markNotificationRead(n._id).catch(() => { });
         }
         if (n.task) router.push(`${taskBasePath}/${n.task}`);
+        else if (n.complaint) router.push(complaintPath(n));
     };
 
     const readAll = async () => {

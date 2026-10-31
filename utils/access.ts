@@ -11,6 +11,7 @@ export const PERMISSION_INFO: { key: Permission; label: string; hint: string; st
     { key: "leads", label: "Leads Console", hint: "All leads, stats, importing and CSR dashboards", staffOnly: true },
     { key: "tasks", label: "Team Tasks (admin)", hint: "Every task, repeating tasks and all approvals", staffOnly: true },
     { key: "accounts", label: "Manage Accounts", hint: "Create CSR / staff accounts, activate / deactivate, change CSR numbers", staffOnly: true },
+    { key: "complaints", label: "Complaints (admin)", hint: "Read, reply to and delete team members' complaints - never the ones about themselves", staffOnly: true },
 ];
 
 export const permissionLabel = (key: Permission) => PERMISSION_INFO.find((p) => p.key === key)?.label || key;

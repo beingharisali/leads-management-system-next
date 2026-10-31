@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef, FormEvent } from "re
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Toaster, toast } from "react-hot-toast";
-import { FiCheckSquare } from "react-icons/fi";
+import { FiCheckSquare, FiMessageSquare } from "react-icons/fi";
 import TaskNotificationBell from "@/components/tasks/TaskNotificationBell";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -120,7 +120,7 @@ export default function AdminDashboardPage() {
     // Staff members given Leads Console access use this page too; the
     // admin sees everything (also while access is still loading)
     const access = useAccess();
-    const allowed = (p: "tasks" | "accounts") => !access.ready || access.can(p);
+    const allowed = (p: "tasks" | "accounts" | "complaints") => !access.ready || access.can(p);
     const isRealAdmin = !access.ready || access.isAdmin;
 
     const statusOptions = LEAD_STATUS_OPTIONS;
@@ -389,6 +389,11 @@ export default function AdminDashboardPage() {
                     {(allowed("tasks") || allowed("accounts")) && (
                         <Link href="/admin/tasks" className="flex items-center gap-2 bg-indigo-50 text-indigo-600 border border-indigo-100 px-6 py-3.5 rounded-2xl font-bold text-sm hover:bg-indigo-100">
                             <FiCheckSquare /> Team Tasks
+                        </Link>
+                    )}
+                    {allowed("complaints") && (
+                        <Link href="/admin/complaints" className="flex items-center gap-2 bg-white text-slate-700 border border-slate-200 px-6 py-3.5 rounded-2xl font-bold text-sm hover:bg-slate-50">
+                            <FiMessageSquare /> Complaints
                         </Link>
                     )}
                     {!isRealAdmin && (

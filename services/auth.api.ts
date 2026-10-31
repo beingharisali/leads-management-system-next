@@ -2,7 +2,7 @@ import http, { getErrorMessage } from "./http";
 
 /* ===================== TYPES & INTERFACES ===================== */
 // Extra access the admin can give (CSRs: team_lead only)
-export type Permission = "team_lead" | "leads" | "tasks" | "accounts";
+export type Permission = "team_lead" | "leads" | "tasks" | "accounts" | "complaints";
 
 export interface User {
   _id: string;

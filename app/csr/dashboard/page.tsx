@@ -30,7 +30,7 @@ import {
     FiLogOut, FiPhone, FiSearch,
     FiPlus, FiUploadCloud, FiX, FiCalendar, FiFilter, FiClock, FiUserCheck, FiArchive,
     FiChevronLeft, FiChevronRight, // New Icons for Pagination
-    FiAlertTriangle, FiFileText, FiCheckSquare
+    FiAlertTriangle, FiFileText, FiCheckSquare, FiMessageSquare
 } from "react-icons/fi";
 
 type LeadStatus = "new" | "interested" | "converted" | "sale" | "not interested" | "paid" | "not pick" | "busy" | "wrong number" | "active" | "inactive" | string;
@@ -440,6 +440,7 @@ export default function CSRDashboard() {
                                 onSelect={l => { setSearchTerm(l.phone); setDateFilter("all"); }}
                             />
                             <Link href="/csr/tasks" className="px-5 py-3 bg-white text-indigo-600 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-indigo-100 hover:bg-indigo-50 transition-all"><FiCheckSquare /> My Tasks</Link>
+                            <Link href="/csr/complaints" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiMessageSquare /> Complaints</Link>
                             <TaskNotificationBell taskBasePath="/csr/tasks" />
                             <Link href="/csr/leads/closed" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiArchive /> Closed Leads</Link>
                             <Link href="/csr/admission" className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50 transition-all"><FiFileText /> Admission Form</Link>

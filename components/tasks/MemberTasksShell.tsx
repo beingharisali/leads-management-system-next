@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Toaster } from "react-hot-toast";
-import { FiArrowLeft, FiCheckSquare, FiGrid, FiLogOut, FiTrendingUp, FiUsers } from "react-icons/fi";
+import { FiArrowLeft, FiCheckSquare, FiGrid, FiInbox, FiLogOut, FiMessageSquare, FiTrendingUp, FiUsers } from "react-icons/fi";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { logout } from "@/utils/decodeToken";
 import { useAccess } from "@/utils/access";
 import TaskNotificationBell from "./TaskNotificationBell";
 
-// Frame for a team member's task pages (staff portal, and the CSR's My Tasks).
+// Frame for a team member's task pages (staff portal, and the CSR's My Tasks),
+// and their complaints to the admin.
 export default function MemberTasksShell({
     role,
     taskBasePath,
@@ -39,7 +41,13 @@ export default function MemberTasksShell({
         { show: access.permissions.includes("leads"), href: "/admin/dashboard", label: "Leads Console", icon: <FiTrendingUp /> },
         { show: access.permissions.includes("tasks"), href: "/admin/tasks", label: "Team Tasks", icon: <FiGrid /> },
         { show: access.permissions.includes("accounts"), href: "/admin/tasks/team", label: "Accounts", icon: <FiUsers /> },
+        { show: access.permissions.includes("complaints"), href: "/admin/complaints", label: "Team Complaints", icon: <FiInbox /> },
     ].filter((l) => l.show);
+
+    // Switch between My Tasks and My Complaints (taskBasePath is e.g. "/staff/tasks")
+    const pathname = usePathname();
+    const complaintsPath = taskBasePath.replace(/\/tasks$/, "/complaints");
+    const onComplaints = pathname.startsWith(complaintsPath);
 
     return (
         <ProtectedRoute role={role}>
@@ -48,10 +56,10 @@ export default function MemberTasksShell({
                 <header className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-4 mb-8">
                     <div className="flex items-center gap-4">
                         <div className="h-12 w-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
-                            <FiCheckSquare className="text-white text-xl" />
+                            {onComplaints ? <FiMessageSquare className="text-white text-xl" /> : <FiCheckSquare className="text-white text-xl" />}
                         </div>
                         <div>
-                            <h1 className="text-2xl font-black text-slate-900">My Tasks</h1>
+                            <h1 className="text-2xl font-black text-slate-900">{onComplaints ? "My Complaints" : "My Tasks"}</h1>
                             <p className="text-slate-500 text-sm font-medium">{name ? `Signed in as ${name}` : "Your assigned work"}</p>
                         </div>
                     </div>
@@ -61,6 +69,12 @@ export default function MemberTasksShell({
                                 {l.icon} {l.label}
                             </Link>
                         ))}
+                        <Link
+                            href={onComplaints ? taskBasePath : complaintsPath}
+                            className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold text-sm flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50"
+                        >
+                            {onComplaints ? <><FiCheckSquare /> My Tasks</> : <><FiMessageSquare /> Complaints</>}
+                        </Link>
                         {backLink && (
                             <Link href={backLink.href} className="px-5 py-3 bg-white text-slate-700 rounded-2xl font-bold text-sm flex items-center gap-2 shadow-sm border border-slate-100 hover:bg-slate-50">
                                 <FiArrowLeft /> {backLink.label}
