@@ -227,9 +227,10 @@ export interface RecurringInput {
 
 export interface AppNotification {
   _id: string;
-  type: "task_assigned" | "task_overdue" | "task_submitted" | "task_approved" | "task_rejected" | "task_blocked" | "task_cancelled" | "task_self_created";
+  type: "task_assigned" | "task_overdue" | "task_submitted" | "task_approved" | "task_rejected" | "task_blocked" | "task_cancelled" | "task_self_created" | "complaint_filed" | "complaint_replied";
   message: string;
   task?: string;
+  complaint?: string;
   read: boolean;
   createdAt: string;
 }
